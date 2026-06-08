@@ -11,13 +11,16 @@ from algopy import (
     Account,
     Asset,
     BoxMap,
+    Bytes,
     Global,
     Txn,
     UInt64,
     arc4,
     gtxn,
     itxn,
+    op,
     subroutine,
+    urange,
 )
 
 
@@ -51,6 +54,7 @@ class FryMinerRewardPool(ARC4Contract):
         self.total_fees_fnode = UInt64(0)
         self.paused = UInt64(0)
         self.wallets = BoxMap(Account, WalletState, key_prefix=b"w")
+        self.merkle_root = Bytes(b"\x00" * 32)
 
     # ── Admin: Initialization ────────────────────────────────────────
 
@@ -147,6 +151,58 @@ class FryMinerRewardPool(ARC4Contract):
         """Increment current epoch. Called after weekly publish batch."""
         assert Txn.sender == self.authority, "unauthorized"
         self.current_epoch += 1
+
+    # ── Admin: Merkle Root ────────────────────────────────────────────
+
+    @arc4.abimethod
+    def set_merkle_root(self, root: arc4.DynamicBytes) -> None:
+        """Store the preseed Merkle root (32 bytes)."""
+        assert Txn.sender == self.authority, "unauthorized"
+        assert root.native.length == 32, "root must be 32 bytes"
+        self.merkle_root = root.native
+
+    # ── Prototype: Merkle Proof Verification (no state changes) ─────
+
+    @arc4.abimethod
+    def verify_merkle_proof(
+        self,
+        entitled_tfry: arc4.UInt64,
+        entitled_fnode: arc4.UInt64,
+        matured_tfry: arc4.UInt64,
+        matured_fnode: arc4.UInt64,
+        proof: arc4.DynamicBytes,
+        leaf_index: arc4.UInt64,
+    ) -> None:
+        """Prototype: verify a Merkle proof against stored root.
+
+        No box creation, no token transfer — just proof verification.
+        Leaf = SHA256(sender || entitled_tfry || entitled_fnode || matured_tfry || matured_fnode)
+        """
+        sender = Txn.sender
+
+        # Reconstruct leaf hash
+        leaf_data = (
+            sender.bytes
+            + entitled_tfry.bytes
+            + entitled_fnode.bytes
+            + matured_tfry.bytes
+            + matured_fnode.bytes
+        )
+        computed = op.sha256(leaf_data)
+
+        # Verify proof path (12 levels for up to 4096 leaves)
+        idx = leaf_index.native
+        proof_bytes = proof.native
+        assert proof_bytes.length == 384, "proof must be 384 bytes (12 x 32)"
+
+        for level in urange(12):
+            sibling = op.extract(proof_bytes, level * 32, 32)
+            if idx & (UInt64(1) << level):
+                computed = op.sha256(sibling + computed)
+            else:
+                computed = op.sha256(computed + sibling)
+
+        assert computed == self.merkle_root, "invalid proof"
 
     # ── Admin: Pool Management ───────────────────────────────────────
 
