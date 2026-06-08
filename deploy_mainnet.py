@@ -226,6 +226,47 @@ def action_verify(client, args):
             print(f"App fNODE: {a['amount'] / 1_000_000:,.2f}")
 
 
+def action_set_root(client, signer_sk, signer, args):
+    """Set the Merkle root for preseed claims."""
+    print(f"\n=== SET MERKLE ROOT ===")
+    if not args.merkle_json:
+        print("ERROR: --merkle-json required")
+        sys.exit(1)
+
+    with open(args.merkle_json) as f:
+        data = json.load(f)
+
+    root_hex = data["root"]
+    wallet_count = len(data.get("wallets", {}))
+    root_bytes = bytes.fromhex(root_hex)
+    assert len(root_bytes) == 32, f"root must be 32 bytes, got {len(root_bytes)}"
+
+    print(f"  Root: {root_hex}")
+    print(f"  Wallets: {wallet_count}")
+
+    # ABI encode: DynamicBytes = uint16 length prefix + raw bytes
+    encoded_root = len(root_bytes).to_bytes(2, "big") + root_bytes
+
+    sp = client.suggested_params()
+    sp.flat_fee = True
+    sp.fee = 2000
+
+    method = Method.from_signature("set_merkle_root(byte[])void")
+
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id=args.app_id,
+        method=method,
+        sender=AUTHORITY_ADDR,
+        sp=sp,
+        signer=signer,
+        method_args=[encoded_root],
+    )
+
+    result = atc.execute(client, 4)
+    print(f"  Merkle root set. Txn: {result.tx_ids[0]}")
+
+
 def action_preflight(client, args):
     """Check authority wallet balances vs requirements."""
     print(f"\n=== BALANCE PRE-FLIGHT ===")
@@ -272,7 +313,7 @@ def action_preflight(client, args):
 def main():
     parser = argparse.ArgumentParser(description="Deploy FryMinerRewardPool to mainnet")
     parser.add_argument("--action", required=True,
-                        choices=["deploy", "opt-in", "fund", "verify", "preflight"])
+                        choices=["deploy", "opt-in", "fund", "verify", "preflight", "set-root"])
     parser.add_argument("--app-id", type=int, default=0)
     parser.add_argument("--algod-url", default="http://100.69.195.100:4190")
     parser.add_argument("--algod-token", default="")
@@ -281,6 +322,7 @@ def main():
     parser.add_argument("--amount", type=int, default=0, help="Amount in microunits for fund action")
     parser.add_argument("--required-tfry", type=int, default=0, help="Required tFRY for preflight")
     parser.add_argument("--required-fnode", type=int, default=0, help="Required fNODE for preflight")
+    parser.add_argument("--merkle-json", default="", help="Path to Merkle proofs JSON (for set-root)")
     args = parser.parse_args()
 
     client = get_client(args)
@@ -306,6 +348,12 @@ def main():
             print("ERROR: --app-id required")
             sys.exit(1)
         action_opt_in(client, signer_sk, signer, args)
+
+    elif args.action == "set-root":
+        if args.app_id == 0:
+            print("ERROR: --app-id required")
+            sys.exit(1)
+        action_set_root(client, signer_sk, signer, args)
 
     elif args.action == "fund":
         if args.app_id == 0 or not args.asset or args.amount <= 0:
