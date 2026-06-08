@@ -33,3 +33,22 @@ STAKING_MULTIPLIERS = {"one": 1.5, "two": 3.0}
 
 # BYOD (Bring Your Own Device) reward reduction
 BYOD_FACTOR = 0.5
+
+# Network reward reduction — scales per-device rewards based on active miner count.
+# Disabled by default. Configure tiers in a future session.
+NETWORK_REDUCTION = {
+    "enabled": False,
+    "method": "tiered",  # "tiered" | "linear" | "logarithmic"
+    "tiers": [
+        # {"max_devices": 500,  "factor": 1.0},
+        # {"max_devices": 1000, "factor": 0.85},
+        # {"max_devices": 2000, "factor": 0.70},
+        # {"max_devices": 5000, "factor": 0.50},
+        # {"max_devices": None, "factor": 0.35},  # None = no upper bound
+    ],
+    "linear": {
+        # "base_devices": 500,    # full reward at/below this count
+        # "min_factor": 0.25,     # floor — never reduce below this
+        # "decay_per_device": 0.0001,  # factor reduction per device above base
+    },
+}

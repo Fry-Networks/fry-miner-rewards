@@ -26,6 +26,7 @@ from .config import (
     FNODE_ASA_ID,
     INSTALLER_CODES,
     MICROUNITS,
+    NETWORK_REDUCTION,
     NODE_CODES,
     STAKING_MULTIPLIERS,
     TFRY_ASA_ID,
@@ -38,6 +39,32 @@ log = logging.getLogger(__name__)
 def round_two(value: float) -> float:
     """Round to 2 decimal places using round-half-up (matches JS Math.round)."""
     return math.floor(value * 100 + 0.5) / 100
+
+
+# ── Network reduction ────────────────────────────────────────────────
+
+
+def get_network_reduction_factor(active_device_count: int, config: dict | None = None) -> float:
+    """Returns multiplier (0.0-1.0) based on network size. 1.0 = no reduction."""
+    reduction = (config or NETWORK_REDUCTION)
+    if not reduction.get("enabled", False):
+        return 1.0
+    method = reduction.get("method", "tiered")
+    if method == "tiered":
+        tiers = reduction.get("tiers", [])
+        for tier in sorted(tiers, key=lambda t: t.get("max_devices") or float("inf")):
+            if tier.get("max_devices") is None or active_device_count <= tier["max_devices"]:
+                return tier["factor"]
+        return 1.0
+    elif method == "linear":
+        lc = reduction.get("linear", {})
+        base = lc.get("base_devices", 500)
+        if active_device_count <= base:
+            return 1.0
+        min_factor = lc.get("min_factor", 0.25)
+        decay = lc.get("decay_per_device", 0.0001)
+        return max(min_factor, 1.0 - (active_device_count - base) * decay)
+    return 1.0
 
 
 # ── Reward computation ───────────────────────────────────────────────
@@ -57,8 +84,11 @@ def is_device_eligible(device: dict, miner_code: str, now: datetime) -> bool:
     exc = device.get("rewards_exception")
     if exc and exc.get("enabled"):
         expires = exc.get("expires_at")
-        if expires and isinstance(expires, datetime) and expires > now:
-            return False
+        if expires and isinstance(expires, datetime):
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires > now:
+                return False
         elif not expires:
             return False
 
@@ -73,6 +103,8 @@ def is_device_eligible(device: dict, miner_code: str, now: datetime) -> bool:
     # Regular miners: require created_at <= now
     created_at = device.get("created_at")
     if created_at and isinstance(created_at, datetime):
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
         return created_at <= now
     return bool(created_at)  # trust if present but not datetime
 
@@ -83,12 +115,15 @@ def compute_base_reward(device: dict, product: dict, now: datetime) -> float:
     staked = device.get("staked")
 
     # Staking multiplier check
+    staked_time = staked.get("time") if staked else None
+    if staked_time and isinstance(staked_time, datetime) and staked_time.tzinfo is None:
+        staked_time = staked_time.replace(tzinfo=timezone.utc)
     has_staking = (
         staked
         and staked.get("type") in STAKING_MULTIPLIERS
         and staked.get("amount", 0) > 0
-        and isinstance(staked.get("time"), datetime)
-        and staked["time"] <= now
+        and isinstance(staked_time, datetime)
+        and staked_time <= now
     )
 
     if has_staking:
@@ -260,11 +295,20 @@ def compute_weekly_rewards(
         if tfry_micro > 0 or fnode_micro > 0:
             result[wallet] = {"tfry": tfry_micro, "fnode": fnode_micro}
 
+    # Network reduction (disabled by default — factor=1.0)
+    reduction_factor = get_network_reduction_factor(stats["eligible"])
+    if reduction_factor < 1.0:
+        log.info("Network reduction factor: %.4f (eligible devices: %d)", reduction_factor, stats["eligible"])
+        for wallet in result:
+            result[wallet]["tfry"] = int(result[wallet]["tfry"] * reduction_factor)
+            result[wallet]["fnode"] = int(result[wallet]["fnode"] * reduction_factor)
+
     log.info(
-        "Computed rewards: %d eligible, %d ineligible, %d no_product, %d zero_reward → %d wallets",
-        stats["eligible"], stats["ineligible"], stats["no_product"], stats["zero_reward"], len(result),
+        "Computed rewards: %d eligible, %d ineligible, %d no_product, %d zero_reward → %d wallets (reduction=%.4f)",
+        stats["eligible"], stats["ineligible"], stats["no_product"], stats["zero_reward"],
+        len(result), reduction_factor,
     )
-    return result
+    return result, reduction_factor
 
 
 def compute_epoch_publish(
@@ -314,7 +358,7 @@ def compute_epoch_publish(
     return publish_records
 
 
-def save_epoch_history(db_main, publish_records: list[dict], now: datetime) -> None:
+def save_epoch_history(db_main, publish_records: list[dict], now: datetime, reduction_factor: float = 1.0) -> None:
     """Write epoch history to MongoDB for maturation lookback."""
     history_col = db_main.reward_epoch_history
     docs = []
@@ -324,6 +368,7 @@ def save_epoch_history(db_main, publish_records: list[dict], now: datetime) -> N
             "epoch": rec["epoch"],
             "cumulative_tfry": rec["entitled_tfry"],
             "cumulative_fnode": rec["entitled_fnode"],
+            "reduction_factor": reduction_factor,
             "computed_at": now,
         })
     if docs:
@@ -380,15 +425,14 @@ def main() -> None:
     db_poc = client["PoC"]
 
     products, devices, poc_hardware, poc_versions = load_data(db_main, db_poc)
-    weekly_rewards = compute_weekly_rewards(products, devices, poc_hardware, now, args.days)
+    weekly_rewards, reduction_factor = compute_weekly_rewards(products, devices, poc_hardware, now, args.days)
     publish_records = compute_epoch_publish(db_main, weekly_rewards, args.epoch, args.maturation_epochs)
 
-    save_epoch_history(db_main, publish_records, now)
-    save_publish_log(db_main, publish_records, args.epoch, args.dry_run, now)
-
-    log.info("Epoch %d: %d wallets, dry_run=%s", args.epoch, len(publish_records), args.dry_run)
+    log.info("Epoch %d: %d wallets, dry_run=%s, reduction=%.4f", args.epoch, len(publish_records), args.dry_run, reduction_factor)
 
     if not args.dry_run:
+        save_epoch_history(db_main, publish_records, now, reduction_factor)
+        save_publish_log(db_main, publish_records, args.epoch, args.dry_run, now)
         if args.app_id == 0:
             log.error("--app-id required for live publish")
             sys.exit(1)
