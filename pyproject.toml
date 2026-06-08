@@ -1,0 +1,24 @@
+[project]
+name = "fry-miner-rewards"
+version = "0.1.0"
+description = "Smart contract reward system for Fry Networks miners"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "algorand-python>=3,<4",
+    "algorand-python-testing>=1,<2",
+    "algokit-utils>=4,<5",
+    "python-dotenv>=1",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "puyapy",
+    "pytest>=8",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "N", "B", "I"]
