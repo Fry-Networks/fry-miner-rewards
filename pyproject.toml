@@ -8,6 +8,7 @@ dependencies = [
     "algorand-python-testing>=1,<2",
     "algokit-utils>=4,<5",
     "python-dotenv>=1",
+    "pymongo>=4,<5",
 ]
 
 [tool.uv]
