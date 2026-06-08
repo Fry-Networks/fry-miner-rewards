@@ -161,39 +161,49 @@ class FryMinerRewardPool(ARC4Contract):
         assert root.native.length == 32, "root must be 32 bytes"
         self.merkle_root = root.native
 
-    # ── Prototype: Merkle Proof Verification (no state changes) ─────
+    # ── User: Preseed Claim (Merkle proof + box creation + transfer) ──
 
     @arc4.abimethod
-    def verify_merkle_proof(
+    def claim_preseed(
         self,
         entitled_tfry: arc4.UInt64,
         entitled_fnode: arc4.UInt64,
-        matured_tfry: arc4.UInt64,
-        matured_fnode: arc4.UInt64,
         proof: arc4.DynamicBytes,
         leaf_index: arc4.UInt64,
+        mbr_pay: gtxn.PaymentTransaction,
+        tfry: Asset,
+        fnode: Asset,
     ) -> None:
-        """Prototype: verify a Merkle proof against stored root.
+        """Claim preseed rewards with Merkle proof.
 
-        No box creation, no token transfer — just proof verification.
-        Leaf = SHA256(sender || entitled_tfry || entitled_fnode || matured_tfry || matured_fnode)
+        Creates box (user pays MBR), verifies proof, transfers tokens.
+        For preseed (epoch 0): matured = entitled (all fee-free).
+        One-time per wallet — subsequent claims use regular claim().
+        Leaf = SHA256(wallet || entitled_tfry || entitled_fnode || entitled_tfry || entitled_fnode)
         """
+        assert self.paused == 0, "paused"
         sender = Txn.sender
+        assert sender not in self.wallets, "already claimed"
+        assert mbr_pay.receiver == Global.current_application_address, "mbr to app"
 
-        # Reconstruct leaf hash
+        e_tfry = entitled_tfry.native
+        e_fnode = entitled_fnode.native
+        assert e_tfry > 0 or e_fnode > 0, "nothing to claim"
+
+        # Reconstruct leaf hash (matured = entitled for preseed)
         leaf_data = (
             sender.bytes
             + entitled_tfry.bytes
             + entitled_fnode.bytes
-            + matured_tfry.bytes
-            + matured_fnode.bytes
+            + entitled_tfry.bytes
+            + entitled_fnode.bytes
         )
         computed = op.sha256(leaf_data)
 
-        # Verify proof path (12 levels for up to 4096 leaves)
+        # Verify Merkle proof (12 levels for up to 4096 leaves)
         idx = leaf_index.native
         proof_bytes = proof.native
-        assert proof_bytes.length == 384, "proof must be 384 bytes (12 x 32)"
+        assert proof_bytes.length == 384, "proof must be 384 bytes"
 
         for level in urange(12):
             sibling = op.extract(proof_bytes, level * 32, 32)
@@ -203,6 +213,39 @@ class FryMinerRewardPool(ARC4Contract):
                 computed = op.sha256(computed + sibling)
 
         assert computed == self.merkle_root, "invalid proof"
+
+        # Transfer tokens (all matured = fee-free)
+        if e_tfry > 0:
+            itxn.AssetTransfer(
+                xfer_asset=tfry,
+                asset_receiver=sender,
+                asset_amount=e_tfry,
+                fee=0,
+            ).submit()
+
+        if e_fnode > 0:
+            itxn.AssetTransfer(
+                xfer_asset=fnode,
+                asset_receiver=sender,
+                asset_amount=e_fnode,
+                fee=0,
+            ).submit()
+
+        # Create box in fully-claimed state (publish_rewards adds new entitlements later)
+        self.wallets[sender] = WalletState(
+            entitled_tfry=entitled_tfry,
+            entitled_fnode=entitled_fnode,
+            matured_tfry=entitled_tfry,
+            matured_fnode=entitled_fnode,
+            claimed_tfry=entitled_tfry,
+            claimed_fnode=entitled_fnode,
+            last_update_epoch=arc4.UInt64(0),
+            last_claim_time=arc4.UInt64(Global.latest_timestamp),
+        )
+
+        # Update global counters
+        self.total_distributed_tfry += e_tfry
+        self.total_distributed_fnode += e_fnode
 
     # ── Admin: Pool Management ───────────────────────────────────────
 

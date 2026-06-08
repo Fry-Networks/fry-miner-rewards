@@ -670,3 +670,315 @@ class TestMultiWallet:
         # Fees only from user2's recent claims
         assert contract.total_fees_tfry == 150  # 500 * 0.30
         assert contract.total_fees_fnode == 60   # 200 * 0.30
+
+
+# ── Merkle Preseed Claims ───────────────────────────────────────────
+
+
+def _account_raw_bytes(account) -> bytes:
+    """Get raw 32-byte public key from an algopy Account for off-chain hashing."""
+    from algosdk import encoding
+    return encoding.decode_address(str(account))
+
+
+def _build_merkle_for_test(wallet_bytes_list, amounts_list):
+    """Build Merkle tree from test data. Returns (tree, leaves)."""
+    from calculator.merkle_tree import MerkleTree, hash_leaf
+
+    leaves = []
+    for wb, (tfry, fnode) in zip(wallet_bytes_list, amounts_list):
+        leaf = hash_leaf(wb, tfry, fnode, tfry, fnode)
+        leaves.append(leaf)
+    tree = MerkleTree(leaves)
+    return tree, leaves
+
+
+class TestSetMerkleRoot:
+    def test_set_root(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        authority = setup["authority"]
+
+        root = b"\xab" * 32
+        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+            contract.set_merkle_root(arc4.DynamicBytes(root))
+
+        assert contract.merkle_root == root
+
+    def test_set_root_unauthorized(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+
+        with pytest.raises(Exception, match="unauthorized"):
+            with ctx.txn.create_group(active_txn_overrides={"sender": user1}):
+                contract.set_merkle_root(arc4.DynamicBytes(b"\x00" * 32))
+
+    def test_set_root_wrong_length(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        authority = setup["authority"]
+
+        with pytest.raises(Exception, match="root must be 32 bytes"):
+            with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+                contract.set_merkle_root(arc4.DynamicBytes(b"\x00" * 31))
+
+
+class TestClaimPreseed:
+    def _setup_merkle(self, setup, user_tfry=1000, user_fnode=500, extra_wallets=5):
+        """Build Merkle tree including user1 + extra wallets."""
+        import hashlib
+
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        authority = setup["authority"]
+        user1 = setup["user1"]
+
+        # Build wallet list: user1 + extra random wallets
+        wallet_bytes_list = [_account_raw_bytes(user1)]
+        amounts_list = [(user_tfry, user_fnode)]
+
+        for i in range(extra_wallets):
+            wb = hashlib.sha256(f"extra-{i}".encode()).digest()
+            wallet_bytes_list.append(wb)
+            amounts_list.append(((i + 1) * 100, (i + 1) * 50))
+
+        tree, leaves = _build_merkle_for_test(wallet_bytes_list, amounts_list)
+
+        # Set root
+        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+            contract.set_merkle_root(arc4.DynamicBytes(tree.root))
+
+        # User1 is at index 0
+        proof = tree.get_proof(0)
+        return tree, proof, user_tfry, user_fnode
+
+    def test_claim_preseed_happy_path(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+        tfry = setup["tfry"]
+        fnode = setup["fnode"]
+
+        tree, proof, e_tfry, e_fnode = self._setup_merkle(setup)
+        mbr_pay = _make_mbr_pay(ctx, user1, contract)
+        app = Application(contract.__app_id__)
+        app_call = ctx.any.txn.application_call(sender=user1, app_id=app)
+
+        with ctx.txn.create_group(
+            gtxns=[mbr_pay, app_call],
+            active_txn_index=1,
+        ):
+            contract.claim_preseed(
+                entitled_tfry=arc4.UInt64(e_tfry),
+                entitled_fnode=arc4.UInt64(e_fnode),
+                proof=arc4.DynamicBytes(proof.to_bytes()),
+                leaf_index=arc4.UInt64(proof.leaf_index),
+                mbr_pay=mbr_pay,
+                tfry=tfry,
+                fnode=fnode,
+            )
+
+        # Box should exist with fully claimed state
+        state = contract.wallets[user1].copy()
+        assert state.entitled_tfry.native == e_tfry
+        assert state.entitled_fnode.native == e_fnode
+        assert state.claimed_tfry.native == e_tfry
+        assert state.claimed_fnode.native == e_fnode
+        assert state.last_update_epoch.native == 0
+
+        # Global counters updated
+        assert contract.total_distributed_tfry == e_tfry
+        assert contract.total_distributed_fnode == e_fnode
+        assert contract.total_fees_tfry == 0  # all matured, no fee
+        assert contract.total_fees_fnode == 0
+
+    def test_claim_preseed_double_claim_rejected(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+        tfry = setup["tfry"]
+        fnode = setup["fnode"]
+
+        tree, proof, e_tfry, e_fnode = self._setup_merkle(setup)
+
+        # First claim succeeds
+        mbr_pay = _make_mbr_pay(ctx, user1, contract)
+        app = Application(contract.__app_id__)
+        app_call = ctx.any.txn.application_call(sender=user1, app_id=app)
+        with ctx.txn.create_group(
+            gtxns=[mbr_pay, app_call],
+            active_txn_index=1,
+        ):
+            contract.claim_preseed(
+                entitled_tfry=arc4.UInt64(e_tfry),
+                entitled_fnode=arc4.UInt64(e_fnode),
+                proof=arc4.DynamicBytes(proof.to_bytes()),
+                leaf_index=arc4.UInt64(proof.leaf_index),
+                mbr_pay=mbr_pay,
+                tfry=tfry,
+                fnode=fnode,
+            )
+
+        # Second claim rejected
+        mbr_pay2 = _make_mbr_pay(ctx, user1, contract)
+        app_call2 = ctx.any.txn.application_call(sender=user1, app_id=app)
+        with pytest.raises(Exception, match="already claimed"):
+            with ctx.txn.create_group(
+                gtxns=[mbr_pay2, app_call2],
+                active_txn_index=1,
+            ):
+                contract.claim_preseed(
+                    entitled_tfry=arc4.UInt64(e_tfry),
+                    entitled_fnode=arc4.UInt64(e_fnode),
+                    proof=arc4.DynamicBytes(proof.to_bytes()),
+                    leaf_index=arc4.UInt64(proof.leaf_index),
+                    mbr_pay=mbr_pay2,
+                    tfry=tfry,
+                    fnode=fnode,
+                )
+
+    def test_claim_preseed_invalid_proof_rejected(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+        tfry = setup["tfry"]
+        fnode = setup["fnode"]
+
+        tree, proof, e_tfry, e_fnode = self._setup_merkle(setup)
+
+        # Tamper with proof
+        bad_proof = b"\x00" * 384
+
+        mbr_pay = _make_mbr_pay(ctx, user1, contract)
+        app = Application(contract.__app_id__)
+        app_call = ctx.any.txn.application_call(sender=user1, app_id=app)
+        with pytest.raises(Exception, match="invalid proof"):
+            with ctx.txn.create_group(
+                gtxns=[mbr_pay, app_call],
+                active_txn_index=1,
+            ):
+                contract.claim_preseed(
+                    entitled_tfry=arc4.UInt64(e_tfry),
+                    entitled_fnode=arc4.UInt64(e_fnode),
+                    proof=arc4.DynamicBytes(bad_proof),
+                    leaf_index=arc4.UInt64(proof.leaf_index),
+                    mbr_pay=mbr_pay,
+                    tfry=tfry,
+                    fnode=fnode,
+                )
+
+    def test_claim_preseed_wrong_amounts_rejected(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+        tfry = setup["tfry"]
+        fnode = setup["fnode"]
+
+        tree, proof, e_tfry, e_fnode = self._setup_merkle(setup)
+
+        # Try claiming with wrong amounts
+        mbr_pay = _make_mbr_pay(ctx, user1, contract)
+        app = Application(contract.__app_id__)
+        app_call = ctx.any.txn.application_call(sender=user1, app_id=app)
+        with pytest.raises(Exception, match="invalid proof"):
+            with ctx.txn.create_group(
+                gtxns=[mbr_pay, app_call],
+                active_txn_index=1,
+            ):
+                contract.claim_preseed(
+                    entitled_tfry=arc4.UInt64(e_tfry + 1),  # wrong amount
+                    entitled_fnode=arc4.UInt64(e_fnode),
+                    proof=arc4.DynamicBytes(proof.to_bytes()),
+                    leaf_index=arc4.UInt64(proof.leaf_index),
+                    mbr_pay=mbr_pay,
+                    tfry=tfry,
+                    fnode=fnode,
+                )
+
+    def test_claim_preseed_paused_rejected(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        authority = setup["authority"]
+        user1 = setup["user1"]
+        tfry = setup["tfry"]
+        fnode = setup["fnode"]
+
+        tree, proof, e_tfry, e_fnode = self._setup_merkle(setup)
+
+        # Pause
+        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+            contract.pause()
+
+        mbr_pay = _make_mbr_pay(ctx, user1, contract)
+        app = Application(contract.__app_id__)
+        app_call = ctx.any.txn.application_call(sender=user1, app_id=app)
+        with pytest.raises(Exception, match="paused"):
+            with ctx.txn.create_group(
+                gtxns=[mbr_pay, app_call],
+                active_txn_index=1,
+            ):
+                contract.claim_preseed(
+                    entitled_tfry=arc4.UInt64(e_tfry),
+                    entitled_fnode=arc4.UInt64(e_fnode),
+                    proof=arc4.DynamicBytes(proof.to_bytes()),
+                    leaf_index=arc4.UInt64(proof.leaf_index),
+                    mbr_pay=mbr_pay,
+                    tfry=tfry,
+                    fnode=fnode,
+                )
+
+    def test_claim_preseed_then_publish_rewards_updates(self, setup):
+        """Full lifecycle: preseed claim → admin publishes weekly → user claims updated."""
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        authority = setup["authority"]
+        user1 = setup["user1"]
+        tfry = setup["tfry"]
+        fnode = setup["fnode"]
+
+        tree, proof, e_tfry, e_fnode = self._setup_merkle(setup, user_tfry=1000, user_fnode=500)
+
+        # Step 1: User claims preseed
+        mbr_pay = _make_mbr_pay(ctx, user1, contract)
+        app = Application(contract.__app_id__)
+        app_call = ctx.any.txn.application_call(sender=user1, app_id=app)
+        with ctx.txn.create_group(
+            gtxns=[mbr_pay, app_call],
+            active_txn_index=1,
+        ):
+            contract.claim_preseed(
+                entitled_tfry=arc4.UInt64(e_tfry),
+                entitled_fnode=arc4.UInt64(e_fnode),
+                proof=arc4.DynamicBytes(proof.to_bytes()),
+                leaf_index=arc4.UInt64(proof.leaf_index),
+                mbr_pay=mbr_pay,
+                tfry=tfry,
+                fnode=fnode,
+            )
+
+        # Step 2: Admin publishes weekly update (epoch 1, new entitled amounts)
+        _publish(ctx, contract, authority, user1, 2000, 800, 1000, 500, 1)
+
+        # Box preserves claimed amounts from preseed
+        state = contract.wallets[user1].copy()
+        assert state.entitled_tfry.native == 2000
+        assert state.entitled_fnode.native == 800
+        assert state.matured_tfry.native == 1000
+        assert state.matured_fnode.native == 500
+        assert state.claimed_tfry.native == 1000   # from preseed
+        assert state.claimed_fnode.native == 500    # from preseed
+
+        # Step 3: User claims new rewards
+        # New claimable = entitled - claimed = 2000-1000=1000 tFRY, 800-500=300 fNODE
+        # Matured (free) = matured - claimed = 1000-1000=0 tFRY, 500-500=0 fNODE
+        # Recent (30% fee) = 1000 tFRY, 300 fNODE
+        with ctx.txn.create_group(active_txn_overrides={"sender": user1}):
+            contract.claim(tfry=tfry, fnode=fnode)
+
+        state2 = contract.wallets[user1].copy()
+        assert state2.claimed_tfry.native == 2000
+        assert state2.claimed_fnode.native == 800
+        # Fee on recent: 1000*0.30=300 tFRY, 300*0.30=90 fNODE
+        assert contract.total_fees_tfry == 300
+        assert contract.total_fees_fnode == 90
