@@ -49,7 +49,7 @@ FEE_ADDR = "AM53XSHRSSSZMNFAMKVAJFXHPMIYYUUBOVCODJ2LQY3D27CVXAHAPIXYXQ"
 # Set after deploying via --action deploy-budget-helper.
 # claim_preseed's 12-round SHA256 Merkle proof verification exceeds the 700
 # per-txn opcode budget. A noop app call in the same group pools +700 budget.
-BUDGET_APP_ID = 0
+BUDGET_APP_ID = 3592977322
 
 # ABI methods
 METHODS = {
