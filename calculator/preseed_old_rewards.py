@@ -215,15 +215,38 @@ def compute_preseed(
 # ── JSON export/import ──────────────────────────────────────────────────
 
 
-def export_json(wallet_amounts: dict, path: str) -> None:
-    with open(path, "w") as f:
-        json.dump(wallet_amounts, f, indent=2)
-    log.info("Exported %d wallets to %s", len(wallet_amounts), path)
+def export_json(wallet_amounts: dict, path: str, merkle: bool = False) -> None:
+    if merkle:
+        from .merkle_tree import MerkleTree
+
+        tree, wallet_index = MerkleTree.from_preseed(wallet_amounts)
+        proofs = {}
+        for wallet_addr, idx in wallet_index.items():
+            proof = tree.get_proof(idx)
+            amounts = wallet_amounts[wallet_addr]
+            proofs[wallet_addr] = {
+                "leaf_index": idx,
+                "proof": proof.to_bytes().hex(),
+                "entitled_tfry": amounts["tfry"],
+                "entitled_fnode": amounts["fnode"],
+            }
+        data = {"root": tree.root.hex(), "wallets": proofs}
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+        log.info("Exported Merkle tree: root=%s, %d wallets to %s", tree.root.hex()[:16] + "...", len(proofs), path)
+    else:
+        with open(path, "w") as f:
+            json.dump(wallet_amounts, f, indent=2)
+        log.info("Exported %d wallets to %s", len(wallet_amounts), path)
 
 
 def import_json(path: str) -> dict:
     with open(path) as f:
         data = json.load(f)
+    # Detect Merkle format vs flat format
+    if "root" in data and "wallets" in data:
+        log.info("Imported Merkle JSON: root=%s..., %d wallets from %s", data["root"][:16], len(data["wallets"]), path)
+        return data
     log.info("Imported %d wallets from %s", len(data), path)
     return data
 
@@ -373,6 +396,10 @@ def main() -> None:
     parser.add_argument("--export", metavar="PATH", help="Export computed wallet amounts to JSON (no algod needed)")
     parser.add_argument("--import-publish", metavar="PATH", help="Import JSON and publish to contract (no MongoDB needed)")
 
+    # Merkle mode
+    parser.add_argument("--merkle", action="store_true",
+                        help="Export includes Merkle tree root + per-wallet proofs (use with --export)")
+
     # fNODE policy
     parser.add_argument("--fnode-policy", default="all",
                         choices=["all", "poc-only", "poc-active-90d", "zero-codes", "cap"],
@@ -481,8 +508,12 @@ def main() -> None:
 
     # Export mode
     if args.export:
-        export_json(wallet_amounts, args.export)
-        print(f"\nExported to {args.export}")
+        export_json(wallet_amounts, args.export, merkle=args.merkle)
+        if args.merkle:
+            from .merkle_tree import MerkleTree
+            tree, _ = MerkleTree.from_preseed(wallet_amounts)
+            print(f"\nMerkle root: {tree.root.hex()}")
+        print(f"Exported to {args.export}")
         client.close()
         return
 
