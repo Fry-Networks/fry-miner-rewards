@@ -4,72 +4,77 @@
 // algopy.arc4.ARC4Contract.approval_program() -> uint64:
 main:
     intcblock 0 1 8 32
-    bytecblock "authority" "total_distributed_tfry" "total_distributed_fnode" "paused" 0x77 "fee_address" "fee_bps" "current_epoch" "tfry_id" "fnode_id" "maturation_epochs" "total_fees_tfry" "total_fees_fnode" "merkle_root" 0x0000000000000000 0x151f7c75
+    bytecblock "owner" "admin" "total_distributed_tfry" "total_distributed_fnode" "paused" 0x77 "fee_address" "fee_bps" "current_epoch" "tfry_id" "fnode_id" "maturation_epochs" "total_fees_tfry" "total_fees_fnode" "merkle_root" 0x0000000000000000 0x151f7c75
     txn ApplicationID
     bnz main_after_if_else@2
     // smart_contracts/fry_miner_reward_pool/contract.py:44
-    // self.authority = Global.creator_address
-    bytec_0 // "authority"
+    // self.owner = Global.creator_address
+    bytec_0 // "owner"
     global CreatorAddress
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:45
-    // self.tfry_id = UInt64(0)
-    bytec 8 // "tfry_id"
-    intc_0 // 0
+    // self.admin = Global.creator_address
+    bytec_1 // "admin"
+    global CreatorAddress
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:46
-    // self.fnode_id = UInt64(0)
-    bytec 9 // "fnode_id"
+    // self.tfry_id = UInt64(0)
+    bytec 9 // "tfry_id"
     intc_0 // 0
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:47
-    // self.fee_address = Global.creator_address
-    bytec 5 // "fee_address"
-    global CreatorAddress
-    app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:48
-    // self.fee_bps = UInt64(3000)
-    bytec 6 // "fee_bps"
-    pushint 3000
-    app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:49
-    // self.maturation_epochs = UInt64(4)
-    bytec 10 // "maturation_epochs"
-    pushint 4
-    app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:50
-    // self.current_epoch = UInt64(0)
-    bytec 7 // "current_epoch"
+    // self.fnode_id = UInt64(0)
+    bytec 10 // "fnode_id"
     intc_0 // 0
     app_global_put
+    // smart_contracts/fry_miner_reward_pool/contract.py:48
+    // self.fee_address = Global.creator_address
+    bytec 6 // "fee_address"
+    global CreatorAddress
+    app_global_put
+    // smart_contracts/fry_miner_reward_pool/contract.py:49
+    // self.fee_bps = UInt64(3000)
+    bytec 7 // "fee_bps"
+    pushint 3000
+    app_global_put
+    // smart_contracts/fry_miner_reward_pool/contract.py:50
+    // self.maturation_epochs = UInt64(4)
+    bytec 11 // "maturation_epochs"
+    pushint 4
+    app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:51
-    // self.total_distributed_tfry = UInt64(0)
-    bytec_1 // "total_distributed_tfry"
+    // self.current_epoch = UInt64(0)
+    bytec 8 // "current_epoch"
     intc_0 // 0
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:52
-    // self.total_distributed_fnode = UInt64(0)
-    bytec_2 // "total_distributed_fnode"
+    // self.total_distributed_tfry = UInt64(0)
+    bytec_2 // "total_distributed_tfry"
     intc_0 // 0
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:53
-    // self.total_fees_tfry = UInt64(0)
-    bytec 11 // "total_fees_tfry"
+    // self.total_distributed_fnode = UInt64(0)
+    bytec_3 // "total_distributed_fnode"
     intc_0 // 0
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:54
-    // self.total_fees_fnode = UInt64(0)
-    bytec 12 // "total_fees_fnode"
+    // self.total_fees_tfry = UInt64(0)
+    bytec 12 // "total_fees_tfry"
     intc_0 // 0
     app_global_put
     // smart_contracts/fry_miner_reward_pool/contract.py:55
-    // self.paused = UInt64(0)
-    bytec_3 // "paused"
+    // self.total_fees_fnode = UInt64(0)
+    bytec 13 // "total_fees_fnode"
     intc_0 // 0
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:57
+    // smart_contracts/fry_miner_reward_pool/contract.py:56
+    // self.paused = UInt64(0)
+    bytec 4 // "paused"
+    intc_0 // 0
+    app_global_put
+    // smart_contracts/fry_miner_reward_pool/contract.py:58
     // self.merkle_root = Bytes(b"\x00" * 32)
-    bytec 13 // "merkle_root"
+    bytec 14 // "merkle_root"
     pushbytes 0x0000000000000000000000000000000000000000000000000000000000000000
     app_global_put
 
@@ -81,15 +86,15 @@ main_after_if_else@2:
     assert
     txn ApplicationID
     bz main_create_NoOp@23
-    pushbytess 0x5cf3b636 0x76f09e45 0xf05a226e 0x5ad9b692 0xb1488af1 0x87c3778f 0xfc4b88b7 0x133cf95b 0x95fc8362 0x4505871b 0x0178f94b 0x1b529de8 0xe7b3a8d0 0x834cf031 0x32ac28f7 0xbda13c6a 0x61521dc2 // method "opt_in_assets(uint64,uint64,pay)void", method "publish_rewards(address,uint64,uint64,uint64,uint64,uint64,pay)void", method "advance_epoch()void", method "set_merkle_root(byte[])void", method "claim_preseed(uint64,uint64,byte[],uint64,pay,uint64,uint64)void", method "fund_pool(axfer)void", method "set_fee(uint64)void", method "set_fee_address(address)void", method "set_maturation(uint64)void", method "set_authority(address)void", method "pause()void", method "unpause()void", method "withdraw_excess(uint64,uint64,address)void", method "claim(uint64,uint64)void", method "claim_matured_only(uint64,uint64)void", method "get_wallet_state(address)(uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64)", method "get_claimable(address)(uint64,uint64,uint64,uint64)"
+    pushbytess 0x5cf3b636 0x76f09e45 0xf05a226e 0x5ad9b692 0xb1488af1 0x87c3778f 0xfc4b88b7 0x133cf95b 0x95fc8362 0x44f2c1be 0x0178f94b 0x1b529de8 0xe7b3a8d0 0x834cf031 0x32ac28f7 0xbda13c6a 0x61521dc2 // method "opt_in_assets(uint64,uint64,pay)void", method "publish_rewards(address,uint64,uint64,uint64,uint64,uint64,pay)void", method "advance_epoch()void", method "set_merkle_root(byte[])void", method "claim_preseed(uint64,uint64,byte[],uint64,pay,uint64,uint64)void", method "fund_pool(axfer)void", method "set_fee(uint64)void", method "set_fee_address(address)void", method "set_maturation(uint64)void", method "set_admin(address)void", method "pause()void", method "unpause()void", method "withdraw_excess(uint64,uint64,address)void", method "claim(uint64,uint64)void", method "claim_matured_only(uint64,uint64)void", method "get_wallet_state(address)(uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64)", method "get_claimable(address)(uint64,uint64,uint64,uint64)"
     txna ApplicationArgs 0
-    match opt_in_assets publish_rewards advance_epoch set_merkle_root claim_preseed fund_pool set_fee set_fee_address set_maturation set_authority pause unpause withdraw_excess claim claim_matured_only get_wallet_state get_claimable
+    match opt_in_assets publish_rewards advance_epoch set_merkle_root claim_preseed fund_pool set_fee set_fee_address set_maturation set_admin pause unpause withdraw_excess claim claim_matured_only get_wallet_state get_claimable
     err
 
 main_create_NoOp@23:
     // smart_contracts/fry_miner_reward_pool/contract.py:40
     // class FryMinerRewardPool(ARC4Contract):
-    pushbytes 0x66c58de7 // method "create(uint64,uint64,address,uint64,uint64)void"
+    pushbytes 0x82211c5d // method "create(uint64,uint64,address,address,address,uint64,uint64)void"
     txna ApplicationArgs 0
     match create
     err
@@ -97,7 +102,7 @@ main_create_NoOp@23:
 
 // smart_contracts.fry_miner_reward_pool.contract._compute_claim(total_claimable: uint64, matured: uint64, claimed: uint64, fee_bps: uint64) -> uint64, uint64:
 _compute_claim:
-    // smart_contracts/fry_miner_reward_pool/contract.py:505-511
+    // smart_contracts/fry_miner_reward_pool/contract.py:514-520
     // @subroutine
     // def _compute_claim(
     //     total_claimable: UInt64,
@@ -108,23 +113,23 @@ _compute_claim:
     proto 4 2
     pushbytes ""
     dupn 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:518
+    // smart_contracts/fry_miner_reward_pool/contract.py:527
     // matured_portion = UInt64(0)
     intc_0 // 0
-    // smart_contracts/fry_miner_reward_pool/contract.py:519
+    // smart_contracts/fry_miner_reward_pool/contract.py:528
     // if matured > claimed:
     frame_dig -3
     frame_dig -2
     >
     bz _compute_claim_after_if_else@4
-    // smart_contracts/fry_miner_reward_pool/contract.py:520
+    // smart_contracts/fry_miner_reward_pool/contract.py:529
     // matured_portion = matured - claimed
     frame_dig -3
     frame_dig -2
     -
     dup
     frame_bury 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:521
+    // smart_contracts/fry_miner_reward_pool/contract.py:530
     // if matured_portion > total_claimable:
     frame_dig -4
     >
@@ -133,26 +138,26 @@ _compute_claim:
     frame_bury 3
 
 _compute_claim_after_if_else@4:
-    // smart_contracts/fry_miner_reward_pool/contract.py:524
+    // smart_contracts/fry_miner_reward_pool/contract.py:533
     // recent_portion = total_claimable - matured_portion
     frame_dig -4
     frame_dig 3
     -
     dup
     frame_bury 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:526-527
+    // smart_contracts/fry_miner_reward_pool/contract.py:535-536
     // # Recent portion: deduct fee
     // recent_fee = UInt64(0)
     intc_0 // 0
     frame_bury 0
-    // smart_contracts/fry_miner_reward_pool/contract.py:528
+    // smart_contracts/fry_miner_reward_pool/contract.py:537
     // recent_net = UInt64(0)
     intc_0 // 0
     frame_bury 1
-    // smart_contracts/fry_miner_reward_pool/contract.py:529
+    // smart_contracts/fry_miner_reward_pool/contract.py:538
     // if recent_portion > 0:
     bz _compute_claim_after_if_else@6
-    // smart_contracts/fry_miner_reward_pool/contract.py:530
+    // smart_contracts/fry_miner_reward_pool/contract.py:539
     // recent_fee = recent_portion * fee_bps // UInt64(10000)
     frame_dig 2
     dup
@@ -162,19 +167,19 @@ _compute_claim_after_if_else@4:
     /
     dup
     frame_bury 0
-    // smart_contracts/fry_miner_reward_pool/contract.py:531
+    // smart_contracts/fry_miner_reward_pool/contract.py:540
     // recent_net = recent_portion - recent_fee
     -
     frame_bury 1
 
 _compute_claim_after_if_else@6:
-    // smart_contracts/fry_miner_reward_pool/contract.py:533-534
+    // smart_contracts/fry_miner_reward_pool/contract.py:542-543
     // # User gets matured (full) + recent net (after fee)
     // user_total = matured_portion + recent_net
     frame_dig 3
     frame_dig 1
     +
-    // smart_contracts/fry_miner_reward_pool/contract.py:535
+    // smart_contracts/fry_miner_reward_pool/contract.py:544
     // return user_total, recent_fee
     frame_dig 0
     frame_bury 1
@@ -184,7 +189,7 @@ _compute_claim_after_if_else@6:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.create[routing]() -> void:
 create:
-    // smart_contracts/fry_miner_reward_pool/contract.py:61
+    // smart_contracts/fry_miner_reward_pool/contract.py:62
     // @arc4.abimethod(create="require")
     txna ApplicationArgs 1
     dup
@@ -208,52 +213,84 @@ create:
     txna ApplicationArgs 4
     dup
     len
-    intc_2 // 8
+    dup
+    intc_3 // 32
     ==
-    assert // invalid number of bytes for arc4.uint64
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
     txna ApplicationArgs 5
+    dup
+    len
+    dup
+    intc_3 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 6
     dup
     len
     intc_2 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // smart_contracts/fry_miner_reward_pool/contract.py:71
+    txna ApplicationArgs 7
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // smart_contracts/fry_miner_reward_pool/contract.py:78
     // self.tfry_id = tfry_id.native
-    uncover 5
+    uncover 9
     btoi
-    bytec 8 // "tfry_id"
+    bytec 9 // "tfry_id"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:72
+    // smart_contracts/fry_miner_reward_pool/contract.py:79
     // self.fnode_id = fnode_id.native
-    uncover 4
+    uncover 8
     btoi
-    bytec 9 // "fnode_id"
+    bytec 10 // "fnode_id"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:73
+    // smart_contracts/fry_miner_reward_pool/contract.py:80
     // self.fee_address = Account(fee_address.bytes)
+    intc_3 // 32
+    uncover 7
+    ==
+    assert // Address length is 32 bytes
+    bytec 6 // "fee_address"
+    uncover 7
+    app_global_put
+    // smart_contracts/fry_miner_reward_pool/contract.py:81
+    // self.owner = Account(owner.bytes)
+    intc_3 // 32
+    uncover 5
+    ==
+    assert // Address length is 32 bytes
+    bytec_0 // "owner"
+    uncover 5
+    app_global_put
+    // smart_contracts/fry_miner_reward_pool/contract.py:82
+    // self.admin = Account(admin.bytes)
     intc_3 // 32
     uncover 3
     ==
     assert // Address length is 32 bytes
-    bytec 5 // "fee_address"
+    bytec_1 // "admin"
     uncover 3
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:74
+    // smart_contracts/fry_miner_reward_pool/contract.py:83
     // self.fee_bps = fee_bps.native
     swap
     btoi
-    bytec 6 // "fee_bps"
+    bytec 7 // "fee_bps"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:75
+    // smart_contracts/fry_miner_reward_pool/contract.py:84
     // self.maturation_epochs = maturation_epochs.native
     btoi
-    bytec 10 // "maturation_epochs"
+    bytec 11 // "maturation_epochs"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:61
+    // smart_contracts/fry_miner_reward_pool/contract.py:62
     // @arc4.abimethod(create="require")
     intc_1 // 1
     return
@@ -261,7 +298,7 @@ create:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.opt_in_assets[routing]() -> void:
 opt_in_assets:
-    // smart_contracts/fry_miner_reward_pool/contract.py:77
+    // smart_contracts/fry_miner_reward_pool/contract.py:86
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -285,22 +322,38 @@ opt_in_assets:
     intc_1 // pay
     ==
     assert // transaction type is pay
-    // smart_contracts/fry_miner_reward_pool/contract.py:85
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:94
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_1 // "admin"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.admin exists
     ==
+    bnz opt_in_assets_bool_true@3
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    bz opt_in_assets_bool_false@4
+
+opt_in_assets_bool_true@3:
+    intc_1 // 1
+
+opt_in_assets_bool_merge@5:
+    // smart_contracts/fry_miner_reward_pool/contract.py:94
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:86
+    // smart_contracts/fry_miner_reward_pool/contract.py:95
     // assert mbr_pay.receiver == Global.current_application_address, "mbr to app"
+    dup
     gtxns Receiver
     global CurrentApplicationAddress
     ==
     assert // mbr to app
-    // smart_contracts/fry_miner_reward_pool/contract.py:87-92
+    // smart_contracts/fry_miner_reward_pool/contract.py:96-101
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=Global.current_application_address,
@@ -308,58 +361,59 @@ opt_in_assets:
     //     fee=0,
     // ).submit()
     itxn_begin
-    // smart_contracts/fry_miner_reward_pool/contract.py:89
+    // smart_contracts/fry_miner_reward_pool/contract.py:98
     // asset_receiver=Global.current_application_address,
     global CurrentApplicationAddress
-    // smart_contracts/fry_miner_reward_pool/contract.py:90
+    // smart_contracts/fry_miner_reward_pool/contract.py:99
     // asset_amount=0,
     intc_0 // 0
     itxn_field AssetAmount
     itxn_field AssetReceiver
-    swap
+    dig 2
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:87
-    // itxn.AssetTransfer(
-    pushint 4 // axfer
-    itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:91
-    // fee=0,
-    intc_0 // 0
-    itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:87-92
-    // itxn.AssetTransfer(
-    //     xfer_asset=tfry,
-    //     asset_receiver=Global.current_application_address,
-    //     asset_amount=0,
-    //     fee=0,
-    // ).submit()
-    itxn_submit
-    // smart_contracts/fry_miner_reward_pool/contract.py:93-98
-    // itxn.AssetTransfer(
-    //     xfer_asset=fnode,
-    //     asset_receiver=Global.current_application_address,
-    //     asset_amount=0,
-    //     fee=0,
-    // ).submit()
-    itxn_begin
-    // smart_contracts/fry_miner_reward_pool/contract.py:95
-    // asset_receiver=Global.current_application_address,
-    global CurrentApplicationAddress
     // smart_contracts/fry_miner_reward_pool/contract.py:96
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    // smart_contracts/fry_miner_reward_pool/contract.py:100
+    // fee=0,
+    intc_0 // 0
+    itxn_field Fee
+    // smart_contracts/fry_miner_reward_pool/contract.py:96-101
+    // itxn.AssetTransfer(
+    //     xfer_asset=tfry,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=0,
+    //     fee=0,
+    // ).submit()
+    itxn_submit
+    // smart_contracts/fry_miner_reward_pool/contract.py:102-107
+    // itxn.AssetTransfer(
+    //     xfer_asset=fnode,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=0,
+    //     fee=0,
+    // ).submit()
+    itxn_begin
+    // smart_contracts/fry_miner_reward_pool/contract.py:104
+    // asset_receiver=Global.current_application_address,
+    global CurrentApplicationAddress
+    // smart_contracts/fry_miner_reward_pool/contract.py:105
     // asset_amount=0,
     intc_0 // 0
     itxn_field AssetAmount
     itxn_field AssetReceiver
+    dig 1
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:93
+    // smart_contracts/fry_miner_reward_pool/contract.py:102
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:97
+    // smart_contracts/fry_miner_reward_pool/contract.py:106
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:93-98
+    // smart_contracts/fry_miner_reward_pool/contract.py:102-107
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=Global.current_application_address,
@@ -367,15 +421,19 @@ opt_in_assets:
     //     fee=0,
     // ).submit()
     itxn_submit
-    // smart_contracts/fry_miner_reward_pool/contract.py:77
+    // smart_contracts/fry_miner_reward_pool/contract.py:86
     // @arc4.abimethod
     intc_1 // 1
     return
 
+opt_in_assets_bool_false@4:
+    intc_0 // 0
+    b opt_in_assets_bool_merge@5
+
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.publish_rewards[routing]() -> void:
 publish_rewards:
-    // smart_contracts/fry_miner_reward_pool/contract.py:102
+    // smart_contracts/fry_miner_reward_pool/contract.py:111
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -385,15 +443,11 @@ publish_rewards:
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
     txna ApplicationArgs 2
     dup
-    cover 2
-    dup
     len
     intc_2 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
     txna ApplicationArgs 3
-    dup
-    cover 3
     dup
     len
     intc_2 // 8
@@ -401,23 +455,17 @@ publish_rewards:
     assert // invalid number of bytes for arc4.uint64
     txna ApplicationArgs 4
     dup
-    cover 4
-    dup
     len
     intc_2 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
     txna ApplicationArgs 5
     dup
-    cover 6
-    dup
     len
     intc_2 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
     txna ApplicationArgs 6
-    dup
-    cover 7
     dup
     len
     intc_2 // 8
@@ -431,76 +479,90 @@ publish_rewards:
     intc_1 // pay
     ==
     assert // transaction type is pay
-    // smart_contracts/fry_miner_reward_pool/contract.py:119
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:128
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_1 // "admin"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.admin exists
     ==
+    bnz publish_rewards_bool_true@3
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    bz publish_rewards_bool_false@4
+
+publish_rewards_bool_true@3:
+    intc_1 // 1
+
+publish_rewards_bool_merge@5:
+    // smart_contracts/fry_miner_reward_pool/contract.py:128
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:120
+    // smart_contracts/fry_miner_reward_pool/contract.py:129
     // assert entitled_tfry.native >= matured_tfry.native, "entitled >= matured tfry"
-    uncover 5
+    dig 5
     btoi
-    uncover 4
+    dig 4
     btoi
     >=
     assert // entitled >= matured tfry
-    // smart_contracts/fry_miner_reward_pool/contract.py:121
+    // smart_contracts/fry_miner_reward_pool/contract.py:130
     // assert entitled_fnode.native >= matured_fnode.native, "entitled >= matured fnode"
-    uncover 3
+    dig 4
     btoi
-    uncover 3
+    dig 3
     btoi
     >=
     assert // entitled >= matured fnode
-    // smart_contracts/fry_miner_reward_pool/contract.py:122
+    // smart_contracts/fry_miner_reward_pool/contract.py:131
     // assert epoch.native >= self.current_epoch, "epoch >= current"
-    swap
+    dig 1
     btoi
     intc_0 // 0
-    bytec 7 // "current_epoch"
+    bytec 8 // "current_epoch"
     app_global_get_ex
     assert // check self.current_epoch exists
     >=
     assert // epoch >= current
-    // smart_contracts/fry_miner_reward_pool/contract.py:123
+    // smart_contracts/fry_miner_reward_pool/contract.py:132
     // assert mbr_pay.receiver == Global.current_application_address, "mbr to app"
+    dup
     gtxns Receiver
     global CurrentApplicationAddress
     ==
     assert // mbr to app
-    // smart_contracts/fry_miner_reward_pool/contract.py:125
+    // smart_contracts/fry_miner_reward_pool/contract.py:134
     // if wallet in self.wallets:
-    bytec 4 // 0x77
-    swap
+    bytec 5 // 0x77
+    dig 7
     concat
     dup
-    cover 2
     box_len
     bury 1
-    bz publish_rewards_else_body@3
-    // smart_contracts/fry_miner_reward_pool/contract.py:126
+    bz publish_rewards_else_body@7
+    // smart_contracts/fry_miner_reward_pool/contract.py:135
     // existing = self.wallets[wallet].copy()
-    dig 1
     dup
     box_get
     assert // check self.wallets entry exists
-    // smart_contracts/fry_miner_reward_pool/contract.py:132
+    // smart_contracts/fry_miner_reward_pool/contract.py:141
     // claimed_tfry=existing.claimed_tfry,
     dup
     extract 32 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:133
+    // smart_contracts/fry_miner_reward_pool/contract.py:142
     // claimed_fnode=existing.claimed_fnode,
     dig 1
     extract 40 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:135
+    // smart_contracts/fry_miner_reward_pool/contract.py:144
     // last_claim_time=existing.last_claim_time,
     uncover 2
     extract 56 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:127-136
+    // smart_contracts/fry_miner_reward_pool/contract.py:136-145
     // self.wallets[wallet] = WalletState(
     //     entitled_tfry=entitled_tfry,
     //     entitled_fnode=entitled_fnode,
@@ -514,7 +576,7 @@ publish_rewards:
     dig 9
     dig 9
     concat
-    uncover 5
+    dig 8
     concat
     dig 7
     concat
@@ -528,14 +590,14 @@ publish_rewards:
     concat
     box_put
 
-publish_rewards_after_if_else@4:
-    // smart_contracts/fry_miner_reward_pool/contract.py:102
+publish_rewards_after_if_else@8:
+    // smart_contracts/fry_miner_reward_pool/contract.py:111
     // @arc4.abimethod
     intc_1 // 1
     return
 
-publish_rewards_else_body@3:
-    // smart_contracts/fry_miner_reward_pool/contract.py:138-147
+publish_rewards_else_body@7:
+    // smart_contracts/fry_miner_reward_pool/contract.py:147-156
     // self.wallets[wallet] = WalletState(
     //     entitled_tfry=entitled_tfry,
     //     entitled_fnode=entitled_fnode,
@@ -546,21 +608,21 @@ publish_rewards_else_body@3:
     //     last_update_epoch=epoch,
     //     last_claim_time=arc4.UInt64(0),
     // )
-    dig 5
+    dig 6
+    dig 6
+    concat
     dig 5
     concat
-    swap
-    concat
-    dig 3
+    dig 4
     concat
     pushbytes 0x00000000000000000000000000000000
     concat
-    dig 2
+    dig 3
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:146
+    // smart_contracts/fry_miner_reward_pool/contract.py:155
     // last_claim_time=arc4.UInt64(0),
-    bytec 14 // 0x0000000000000000
-    // smart_contracts/fry_miner_reward_pool/contract.py:138-147
+    bytec 15 // 0x0000000000000000
+    // smart_contracts/fry_miner_reward_pool/contract.py:147-156
     // self.wallets[wallet] = WalletState(
     //     entitled_tfry=entitled_tfry,
     //     entitled_fnode=entitled_fnode,
@@ -572,80 +634,121 @@ publish_rewards_else_body@3:
     //     last_claim_time=arc4.UInt64(0),
     // )
     concat
-    dig 1
-    swap
     box_put
-    b publish_rewards_after_if_else@4
+    b publish_rewards_after_if_else@8
+
+publish_rewards_bool_false@4:
+    intc_0 // 0
+    b publish_rewards_bool_merge@5
 
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.advance_epoch[routing]() -> void:
 advance_epoch:
-    // smart_contracts/fry_miner_reward_pool/contract.py:152
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:161
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_1 // "admin"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.admin exists
     ==
+    bnz advance_epoch_bool_true@3
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    bz advance_epoch_bool_false@4
+
+advance_epoch_bool_true@3:
+    intc_1 // 1
+
+advance_epoch_bool_merge@5:
+    // smart_contracts/fry_miner_reward_pool/contract.py:161
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:153
+    // smart_contracts/fry_miner_reward_pool/contract.py:162
     // self.current_epoch += 1
     intc_0 // 0
-    bytec 7 // "current_epoch"
+    bytec 8 // "current_epoch"
     app_global_get_ex
     assert // check self.current_epoch exists
     intc_1 // 1
     +
-    bytec 7 // "current_epoch"
+    bytec 8 // "current_epoch"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:149
+    // smart_contracts/fry_miner_reward_pool/contract.py:158
     // @arc4.abimethod
     intc_1 // 1
     return
 
+advance_epoch_bool_false@4:
+    intc_0 // 0
+    b advance_epoch_bool_merge@5
+
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.set_merkle_root[routing]() -> void:
 set_merkle_root:
-    // smart_contracts/fry_miner_reward_pool/contract.py:157
+    // smart_contracts/fry_miner_reward_pool/contract.py:166
     // @arc4.abimethod
     txna ApplicationArgs 1
-    dup
+    dupn 2
     intc_0 // 0
     extract_uint16 // on error: invalid array length header
     pushint 2
     +
-    dig 1
+    swap
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // smart_contracts/fry_miner_reward_pool/contract.py:160
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:169
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_1 // "admin"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.admin exists
     ==
+    bnz set_merkle_root_bool_true@3
+    txn Sender
+    intc_0 // 0
+    bytec_0 // "owner"
+    app_global_get_ex
+    assert // check self.owner exists
+    ==
+    bz set_merkle_root_bool_false@4
+
+set_merkle_root_bool_true@3:
+    intc_1 // 1
+
+set_merkle_root_bool_merge@5:
+    // smart_contracts/fry_miner_reward_pool/contract.py:169
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:161
+    // smart_contracts/fry_miner_reward_pool/contract.py:170
     // assert root.native.length == 32, "root must be 32 bytes"
+    dup
     extract 2 0
     dup
     len
     intc_3 // 32
     ==
     assert // root must be 32 bytes
-    // smart_contracts/fry_miner_reward_pool/contract.py:162
+    // smart_contracts/fry_miner_reward_pool/contract.py:171
     // self.merkle_root = root.native
-    bytec 13 // "merkle_root"
+    bytec 14 // "merkle_root"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:157
+    // smart_contracts/fry_miner_reward_pool/contract.py:166
     // @arc4.abimethod
     intc_1 // 1
     return
+
+set_merkle_root_bool_false@4:
+    intc_0 // 0
+    b set_merkle_root_bool_merge@5
 
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.claim_preseed[routing]() -> void:
@@ -654,7 +757,7 @@ claim_preseed:
     dup
     pushbytes ""
     dup
-    // smart_contracts/fry_miner_reward_pool/contract.py:166
+    // smart_contracts/fry_miner_reward_pool/contract.py:175
     // @arc4.abimethod
     txna ApplicationArgs 1
     dupn 2
@@ -713,22 +816,22 @@ claim_preseed:
     assert // invalid number of bytes for arc4.uint64
     btoi
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:184
+    // smart_contracts/fry_miner_reward_pool/contract.py:193
     // assert self.paused == 0, "paused"
     intc_0 // 0
-    bytec_3 // "paused"
+    bytec 4 // "paused"
     app_global_get_ex
     assert // check self.paused exists
     !
     assert // paused
-    // smart_contracts/fry_miner_reward_pool/contract.py:185
+    // smart_contracts/fry_miner_reward_pool/contract.py:194
     // sender = Txn.sender
     txn Sender
     dup
     cover 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:186
+    // smart_contracts/fry_miner_reward_pool/contract.py:195
     // assert sender not in self.wallets, "already claimed"
-    bytec 4 // 0x77
+    bytec 5 // 0x77
     swap
     concat
     dup
@@ -737,23 +840,23 @@ claim_preseed:
     bury 1
     !
     assert // already claimed
-    // smart_contracts/fry_miner_reward_pool/contract.py:187
+    // smart_contracts/fry_miner_reward_pool/contract.py:196
     // assert mbr_pay.receiver == Global.current_application_address, "mbr to app"
     gtxns Receiver
     global CurrentApplicationAddress
     ==
     assert // mbr to app
-    // smart_contracts/fry_miner_reward_pool/contract.py:189
+    // smart_contracts/fry_miner_reward_pool/contract.py:198
     // e_tfry = entitled_tfry.native
     swap
     btoi
     dup
     uncover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:190
+    // smart_contracts/fry_miner_reward_pool/contract.py:199
     // e_fnode = entitled_fnode.native
     btoi
     swap
-    // smart_contracts/fry_miner_reward_pool/contract.py:191
+    // smart_contracts/fry_miner_reward_pool/contract.py:200
     // assert e_tfry > 0 or e_fnode > 0, "nothing to claim"
     bnz claim_preseed_bool_true@3
     dup
@@ -763,10 +866,10 @@ claim_preseed_bool_true@3:
     intc_1 // 1
 
 claim_preseed_bool_merge@5:
-    // smart_contracts/fry_miner_reward_pool/contract.py:191
+    // smart_contracts/fry_miner_reward_pool/contract.py:200
     // assert e_tfry > 0 or e_fnode > 0, "nothing to claim"
     assert // nothing to claim
-    // smart_contracts/fry_miner_reward_pool/contract.py:195-196
+    // smart_contracts/fry_miner_reward_pool/contract.py:204-205
     // sender.bytes
     // + entitled_tfry.bytes
     dig 3
@@ -774,7 +877,7 @@ claim_preseed_bool_merge@5:
     dup
     cover 2
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:195-197
+    // smart_contracts/fry_miner_reward_pool/contract.py:204-206
     // sender.bytes
     // + entitled_tfry.bytes
     // + entitled_fnode.bytes
@@ -782,14 +885,14 @@ claim_preseed_bool_merge@5:
     dup
     cover 3
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:195-198
+    // smart_contracts/fry_miner_reward_pool/contract.py:204-207
     // sender.bytes
     // + entitled_tfry.bytes
     // + entitled_fnode.bytes
     // + entitled_tfry.bytes
     swap
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:195-199
+    // smart_contracts/fry_miner_reward_pool/contract.py:204-208
     // sender.bytes
     // + entitled_tfry.bytes
     // + entitled_fnode.bytes
@@ -797,41 +900,41 @@ claim_preseed_bool_merge@5:
     // + entitled_fnode.bytes
     swap
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:201
+    // smart_contracts/fry_miner_reward_pool/contract.py:210
     // computed = op.sha256(leaf_data)
     sha256
     bury 14
-    // smart_contracts/fry_miner_reward_pool/contract.py:203-204
+    // smart_contracts/fry_miner_reward_pool/contract.py:212-213
     // # Verify Merkle proof (12 levels for up to 4096 leaves)
     // idx = leaf_index.native
     dig 6
     btoi
     bury 12
-    // smart_contracts/fry_miner_reward_pool/contract.py:205
+    // smart_contracts/fry_miner_reward_pool/contract.py:214
     // proof_bytes = proof.native
     dig 7
     extract 2 0
     dup
     bury 14
-    // smart_contracts/fry_miner_reward_pool/contract.py:206
+    // smart_contracts/fry_miner_reward_pool/contract.py:215
     // assert proof_bytes.length == 384, "proof must be 384 bytes"
     len
     pushint 384
     ==
     assert // proof must be 384 bytes
-    // smart_contracts/fry_miner_reward_pool/contract.py:208
+    // smart_contracts/fry_miner_reward_pool/contract.py:217
     // for level in urange(12):
     intc_0 // 0
     bury 11
 
 claim_preseed_for_header@6:
-    // smart_contracts/fry_miner_reward_pool/contract.py:208
+    // smart_contracts/fry_miner_reward_pool/contract.py:217
     // for level in urange(12):
     dig 10
     pushint 12
     <
     bz claim_preseed_after_for@12
-    // smart_contracts/fry_miner_reward_pool/contract.py:209
+    // smart_contracts/fry_miner_reward_pool/contract.py:218
     // sibling = op.extract(proof_bytes, level * 32, 32)
     dig 10
     dup
@@ -842,7 +945,7 @@ claim_preseed_for_header@6:
     intc_3 // 32
     extract3
     swap
-    // smart_contracts/fry_miner_reward_pool/contract.py:210
+    // smart_contracts/fry_miner_reward_pool/contract.py:219
     // if idx & (UInt64(1) << level):
     intc_1 // 1
     swap
@@ -850,7 +953,7 @@ claim_preseed_for_header@6:
     dig 13
     &
     bz claim_preseed_else_body@9
-    // smart_contracts/fry_miner_reward_pool/contract.py:211
+    // smart_contracts/fry_miner_reward_pool/contract.py:220
     // computed = op.sha256(sibling + computed)
     dig 14
     concat
@@ -858,7 +961,7 @@ claim_preseed_for_header@6:
     bury 14
 
 claim_preseed_after_if_else@10:
-    // smart_contracts/fry_miner_reward_pool/contract.py:208
+    // smart_contracts/fry_miner_reward_pool/contract.py:217
     // for level in urange(12):
     dig 10
     intc_1 // 1
@@ -867,7 +970,7 @@ claim_preseed_after_if_else@10:
     b claim_preseed_for_header@6
 
 claim_preseed_else_body@9:
-    // smart_contracts/fry_miner_reward_pool/contract.py:213
+    // smart_contracts/fry_miner_reward_pool/contract.py:222
     // computed = op.sha256(computed + sibling)
     dig 14
     swap
@@ -877,21 +980,21 @@ claim_preseed_else_body@9:
     b claim_preseed_after_if_else@10
 
 claim_preseed_after_for@12:
-    // smart_contracts/fry_miner_reward_pool/contract.py:215
+    // smart_contracts/fry_miner_reward_pool/contract.py:224
     // assert computed == self.merkle_root, "invalid proof"
     intc_0 // 0
-    bytec 13 // "merkle_root"
+    bytec 14 // "merkle_root"
     app_global_get_ex
     assert // check self.merkle_root exists
     dig 14
     ==
     assert // invalid proof
-    // smart_contracts/fry_miner_reward_pool/contract.py:217-218
+    // smart_contracts/fry_miner_reward_pool/contract.py:226-227
     // # Transfer tokens (all matured = fee-free)
     // if e_tfry > 0:
     dig 1
     bz claim_preseed_after_if_else@15
-    // smart_contracts/fry_miner_reward_pool/contract.py:219-224
+    // smart_contracts/fry_miner_reward_pool/contract.py:228-233
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=sender,
@@ -905,15 +1008,15 @@ claim_preseed_after_for@12:
     itxn_field AssetReceiver
     dig 5
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:219
+    // smart_contracts/fry_miner_reward_pool/contract.py:228
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:223
+    // smart_contracts/fry_miner_reward_pool/contract.py:232
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:219-224
+    // smart_contracts/fry_miner_reward_pool/contract.py:228-233
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=sender,
@@ -923,11 +1026,11 @@ claim_preseed_after_for@12:
     itxn_submit
 
 claim_preseed_after_if_else@15:
-    // smart_contracts/fry_miner_reward_pool/contract.py:226
+    // smart_contracts/fry_miner_reward_pool/contract.py:235
     // if e_fnode > 0:
     dup
     bz claim_preseed_after_if_else@18
-    // smart_contracts/fry_miner_reward_pool/contract.py:227-232
+    // smart_contracts/fry_miner_reward_pool/contract.py:236-241
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=sender,
@@ -941,15 +1044,15 @@ claim_preseed_after_if_else@15:
     itxn_field AssetReceiver
     dig 4
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:227
+    // smart_contracts/fry_miner_reward_pool/contract.py:236
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:231
+    // smart_contracts/fry_miner_reward_pool/contract.py:240
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:227-232
+    // smart_contracts/fry_miner_reward_pool/contract.py:236-241
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=sender,
@@ -959,11 +1062,11 @@ claim_preseed_after_if_else@15:
     itxn_submit
 
 claim_preseed_after_if_else@18:
-    // smart_contracts/fry_miner_reward_pool/contract.py:243
+    // smart_contracts/fry_miner_reward_pool/contract.py:252
     // last_claim_time=arc4.UInt64(Global.latest_timestamp),
     global LatestTimestamp
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:234-244
+    // smart_contracts/fry_miner_reward_pool/contract.py:243-253
     // # Create box in fully-claimed state (publish_rewards adds new entitlements later)
     // self.wallets[sender] = WalletState(
     //     entitled_tfry=entitled_tfry,
@@ -989,10 +1092,10 @@ claim_preseed_after_if_else@18:
     concat
     swap
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:242
+    // smart_contracts/fry_miner_reward_pool/contract.py:251
     // last_update_epoch=arc4.UInt64(0),
-    bytec 14 // 0x0000000000000000
-    // smart_contracts/fry_miner_reward_pool/contract.py:234-244
+    bytec 15 // 0x0000000000000000
+    // smart_contracts/fry_miner_reward_pool/contract.py:243-253
     // # Create box in fully-claimed state (publish_rewards adds new entitlements later)
     // self.wallets[sender] = WalletState(
     //     entitled_tfry=entitled_tfry,
@@ -1010,30 +1113,30 @@ claim_preseed_after_if_else@18:
     dig 3
     swap
     box_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:246-247
+    // smart_contracts/fry_miner_reward_pool/contract.py:255-256
     // # Update global counters
     // self.total_distributed_tfry += e_tfry
     intc_0 // 0
-    bytec_1 // "total_distributed_tfry"
+    bytec_2 // "total_distributed_tfry"
     app_global_get_ex
     assert // check self.total_distributed_tfry exists
     dig 2
     +
-    bytec_1 // "total_distributed_tfry"
+    bytec_2 // "total_distributed_tfry"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:248
+    // smart_contracts/fry_miner_reward_pool/contract.py:257
     // self.total_distributed_fnode += e_fnode
     intc_0 // 0
-    bytec_2 // "total_distributed_fnode"
+    bytec_3 // "total_distributed_fnode"
     app_global_get_ex
     assert // check self.total_distributed_fnode exists
     dig 1
     +
-    bytec_2 // "total_distributed_fnode"
+    bytec_3 // "total_distributed_fnode"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:166
+    // smart_contracts/fry_miner_reward_pool/contract.py:175
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1045,7 +1148,8 @@ claim_preseed_bool_false@4:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.fund_pool[routing]() -> void:
 fund_pool:
-    // smart_contracts/fry_miner_reward_pool/contract.py:252
+    pushbytes ""
+    // smart_contracts/fry_miner_reward_pool/contract.py:261
     // @arc4.abimethod
     txn GroupIndex
     intc_1 // 1
@@ -1055,39 +1159,20 @@ fund_pool:
     pushint 4 // axfer
     ==
     assert // transaction type is axfer
-    // smart_contracts/fry_miner_reward_pool/contract.py:255
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:264
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_1 // "admin"
     app_global_get_ex
-    assert // check self.authority exists
-    ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:256
-    // assert axfer.asset_receiver == Global.current_application_address, "to app"
-    dup
-    gtxns AssetReceiver
-    global CurrentApplicationAddress
-    ==
-    assert // to app
-    // smart_contracts/fry_miner_reward_pool/contract.py:257
-    // asset_id = axfer.xfer_asset.id
-    gtxns XferAsset
-    dup
-    // smart_contracts/fry_miner_reward_pool/contract.py:258
-    // assert asset_id == self.tfry_id or asset_id == self.fnode_id, "wrong asset"
-    intc_0 // 0
-    bytec 8 // "tfry_id"
-    app_global_get_ex
-    assert // check self.tfry_id exists
+    assert // check self.admin exists
     ==
     bnz fund_pool_bool_true@3
+    txn Sender
     intc_0 // 0
-    bytec 9 // "fnode_id"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.fnode_id exists
-    dig 1
+    assert // check self.owner exists
     ==
     bz fund_pool_bool_false@4
 
@@ -1095,13 +1180,52 @@ fund_pool_bool_true@3:
     intc_1 // 1
 
 fund_pool_bool_merge@5:
-    // smart_contracts/fry_miner_reward_pool/contract.py:258
+    // smart_contracts/fry_miner_reward_pool/contract.py:264
+    // assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
+    assert // unauthorized
+    // smart_contracts/fry_miner_reward_pool/contract.py:265
+    // assert axfer.asset_receiver == Global.current_application_address, "to app"
+    dupn 2
+    gtxns AssetReceiver
+    global CurrentApplicationAddress
+    ==
+    assert // to app
+    // smart_contracts/fry_miner_reward_pool/contract.py:266
+    // asset_id = axfer.xfer_asset.id
+    gtxns XferAsset
+    dup
+    bury 3
+    // smart_contracts/fry_miner_reward_pool/contract.py:267
+    // assert asset_id == self.tfry_id or asset_id == self.fnode_id, "wrong asset"
+    intc_0 // 0
+    bytec 9 // "tfry_id"
+    app_global_get_ex
+    assert // check self.tfry_id exists
+    ==
+    bnz fund_pool_bool_true@7
+    intc_0 // 0
+    bytec 10 // "fnode_id"
+    app_global_get_ex
+    assert // check self.fnode_id exists
+    dig 2
+    ==
+    bz fund_pool_bool_false@8
+
+fund_pool_bool_true@7:
+    intc_1 // 1
+
+fund_pool_bool_merge@9:
+    // smart_contracts/fry_miner_reward_pool/contract.py:267
     // assert asset_id == self.tfry_id or asset_id == self.fnode_id, "wrong asset"
     assert // wrong asset
-    // smart_contracts/fry_miner_reward_pool/contract.py:252
+    // smart_contracts/fry_miner_reward_pool/contract.py:261
     // @arc4.abimethod
     intc_1 // 1
     return
+
+fund_pool_bool_false@8:
+    intc_0 // 0
+    b fund_pool_bool_merge@9
 
 fund_pool_bool_false@4:
     intc_0 // 0
@@ -1110,7 +1234,7 @@ fund_pool_bool_false@4:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.set_fee[routing]() -> void:
 set_fee:
-    // smart_contracts/fry_miner_reward_pool/contract.py:260
+    // smart_contracts/fry_miner_reward_pool/contract.py:269
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1118,28 +1242,28 @@ set_fee:
     intc_2 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // smart_contracts/fry_miner_reward_pool/contract.py:263
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:272
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:264
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:273
     // assert fee_bps.native <= 5000, "fee too high"
     btoi
     dup
     pushint 5000
     <=
     assert // fee too high
-    // smart_contracts/fry_miner_reward_pool/contract.py:265
+    // smart_contracts/fry_miner_reward_pool/contract.py:274
     // self.fee_bps = fee_bps.native
-    bytec 6 // "fee_bps"
+    bytec 7 // "fee_bps"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:260
+    // smart_contracts/fry_miner_reward_pool/contract.py:269
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1147,7 +1271,7 @@ set_fee:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.set_fee_address[routing]() -> void:
 set_fee_address:
-    // smart_contracts/fry_miner_reward_pool/contract.py:267
+    // smart_contracts/fry_miner_reward_pool/contract.py:276
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1156,24 +1280,24 @@ set_fee_address:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // smart_contracts/fry_miner_reward_pool/contract.py:270
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:279
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:271
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:280
     // self.fee_address = Account(addr.bytes)
     intc_3 // 32
     ==
     assert // Address length is 32 bytes
-    bytec 5 // "fee_address"
+    bytec 6 // "fee_address"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:267
+    // smart_contracts/fry_miner_reward_pool/contract.py:276
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1181,7 +1305,7 @@ set_fee_address:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.set_maturation[routing]() -> void:
 set_maturation:
-    // smart_contracts/fry_miner_reward_pool/contract.py:273
+    // smart_contracts/fry_miner_reward_pool/contract.py:282
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1189,30 +1313,30 @@ set_maturation:
     intc_2 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // smart_contracts/fry_miner_reward_pool/contract.py:276
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:285
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:277
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:286
     // self.maturation_epochs = epochs.native
     btoi
-    bytec 10 // "maturation_epochs"
+    bytec 11 // "maturation_epochs"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:273
+    // smart_contracts/fry_miner_reward_pool/contract.py:282
     // @arc4.abimethod
     intc_1 // 1
     return
 
 
-// smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.set_authority[routing]() -> void:
-set_authority:
-    // smart_contracts/fry_miner_reward_pool/contract.py:279
+// smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.set_admin[routing]() -> void:
+set_admin:
+    // smart_contracts/fry_miner_reward_pool/contract.py:288
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1221,24 +1345,24 @@ set_authority:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // smart_contracts/fry_miner_reward_pool/contract.py:282
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:291
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:283
-    // self.authority = Account(new_authority.bytes)
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:292
+    // self.admin = Account(new_admin.bytes)
     intc_3 // 32
     ==
     assert // Address length is 32 bytes
-    bytec_0 // "authority"
+    bytec_1 // "admin"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:279
+    // smart_contracts/fry_miner_reward_pool/contract.py:288
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1246,21 +1370,21 @@ set_authority:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.pause[routing]() -> void:
 pause:
-    // smart_contracts/fry_miner_reward_pool/contract.py:288
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:297
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:289
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:298
     // self.paused = UInt64(1)
-    bytec_3 // "paused"
+    bytec 4 // "paused"
     intc_1 // 1
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:285
+    // smart_contracts/fry_miner_reward_pool/contract.py:294
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1268,21 +1392,21 @@ pause:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.unpause[routing]() -> void:
 unpause:
-    // smart_contracts/fry_miner_reward_pool/contract.py:294
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:303
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:295
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:304
     // self.paused = UInt64(0)
-    bytec_3 // "paused"
+    bytec 4 // "paused"
     intc_0 // 0
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:291
+    // smart_contracts/fry_miner_reward_pool/contract.py:300
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1290,7 +1414,7 @@ unpause:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.withdraw_excess[routing]() -> void:
 withdraw_excess:
-    // smart_contracts/fry_miner_reward_pool/contract.py:297
+    // smart_contracts/fry_miner_reward_pool/contract.py:306
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1311,16 +1435,16 @@ withdraw_excess:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // smart_contracts/fry_miner_reward_pool/contract.py:300
-    // assert Txn.sender == self.authority, "unauthorized"
+    // smart_contracts/fry_miner_reward_pool/contract.py:309
+    // assert Txn.sender == self.owner, "owner only"
     txn Sender
     intc_0 // 0
-    bytec_0 // "authority"
+    bytec_0 // "owner"
     app_global_get_ex
-    assert // check self.authority exists
+    assert // check self.owner exists
     ==
-    assert // unauthorized
-    // smart_contracts/fry_miner_reward_pool/contract.py:301-306
+    assert // owner only
+    // smart_contracts/fry_miner_reward_pool/contract.py:310-315
     // itxn.AssetTransfer(
     //     xfer_asset=asset,
     //     asset_receiver=to,
@@ -1328,22 +1452,22 @@ withdraw_excess:
     //     fee=0,
     // ).submit()
     itxn_begin
-    // smart_contracts/fry_miner_reward_pool/contract.py:304
+    // smart_contracts/fry_miner_reward_pool/contract.py:313
     // asset_amount=amount.native,
     swap
     btoi
     itxn_field AssetAmount
     itxn_field AssetReceiver
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:301
+    // smart_contracts/fry_miner_reward_pool/contract.py:310
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:305
+    // smart_contracts/fry_miner_reward_pool/contract.py:314
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:301-306
+    // smart_contracts/fry_miner_reward_pool/contract.py:310-315
     // itxn.AssetTransfer(
     //     xfer_asset=asset,
     //     asset_receiver=to,
@@ -1351,7 +1475,7 @@ withdraw_excess:
     //     fee=0,
     // ).submit()
     itxn_submit
-    // smart_contracts/fry_miner_reward_pool/contract.py:297
+    // smart_contracts/fry_miner_reward_pool/contract.py:306
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1362,7 +1486,7 @@ claim:
     intc_0 // 0
     pushbytes ""
     dupn 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:310
+    // smart_contracts/fry_miner_reward_pool/contract.py:319
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1378,43 +1502,43 @@ claim:
     ==
     assert // invalid number of bytes for arc4.uint64
     btoi
-    // smart_contracts/fry_miner_reward_pool/contract.py:317
+    // smart_contracts/fry_miner_reward_pool/contract.py:326
     // assert self.paused == 0, "paused"
     intc_0 // 0
-    bytec_3 // "paused"
+    bytec 4 // "paused"
     app_global_get_ex
     assert // check self.paused exists
     !
     assert // paused
-    // smart_contracts/fry_miner_reward_pool/contract.py:318
+    // smart_contracts/fry_miner_reward_pool/contract.py:327
     // sender = Txn.sender
     txn Sender
-    // smart_contracts/fry_miner_reward_pool/contract.py:319
+    // smart_contracts/fry_miner_reward_pool/contract.py:328
     // assert sender in self.wallets, "no rewards"
-    bytec 4 // 0x77
-    // smart_contracts/fry_miner_reward_pool/contract.py:318
+    bytec 5 // 0x77
+    // smart_contracts/fry_miner_reward_pool/contract.py:327
     // sender = Txn.sender
     txn Sender
-    // smart_contracts/fry_miner_reward_pool/contract.py:319
+    // smart_contracts/fry_miner_reward_pool/contract.py:328
     // assert sender in self.wallets, "no rewards"
     concat
     dupn 2
     box_len
     bury 1
     assert // no rewards
-    // smart_contracts/fry_miner_reward_pool/contract.py:321
+    // smart_contracts/fry_miner_reward_pool/contract.py:330
     // state = self.wallets[sender].copy()
     box_get
     pop
     dupn 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:323
+    // smart_contracts/fry_miner_reward_pool/contract.py:332
     // entitled_tfry = state.entitled_tfry.native
     extract 0 8
     swap
     dup
     intc_0 // 0
     extract_uint64
-    // smart_contracts/fry_miner_reward_pool/contract.py:324
+    // smart_contracts/fry_miner_reward_pool/contract.py:333
     // entitled_fnode = state.entitled_fnode.native
     dig 1
     extract 8 8
@@ -1422,7 +1546,7 @@ claim:
     dig 1
     intc_2 // 8
     extract_uint64
-    // smart_contracts/fry_miner_reward_pool/contract.py:325
+    // smart_contracts/fry_miner_reward_pool/contract.py:334
     // matured_tfry = state.matured_tfry.native
     dig 2
     extract 16 8
@@ -1431,7 +1555,7 @@ claim:
     pushint 16
     extract_uint64
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:326
+    // smart_contracts/fry_miner_reward_pool/contract.py:335
     // matured_fnode = state.matured_fnode.native
     dig 2
     extract 24 8
@@ -1440,7 +1564,7 @@ claim:
     pushint 24
     extract_uint64
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:327
+    // smart_contracts/fry_miner_reward_pool/contract.py:336
     // claimed_tfry = state.claimed_tfry.native
     dig 2
     intc_3 // 32
@@ -1448,7 +1572,7 @@ claim:
     dup
     cover 2
     cover 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:328
+    // smart_contracts/fry_miner_reward_pool/contract.py:337
     // claimed_fnode = state.claimed_fnode.native
     uncover 3
     pushint 40
@@ -1456,20 +1580,20 @@ claim:
     dup
     cover 2
     cover 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:330
+    // smart_contracts/fry_miner_reward_pool/contract.py:339
     // total_claimable_tfry = entitled_tfry - claimed_tfry
     uncover 3
     uncover 3
     -
     dup
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:331
+    // smart_contracts/fry_miner_reward_pool/contract.py:340
     // total_claimable_fnode = entitled_fnode - claimed_fnode
     swap
     uncover 2
     -
     swap
-    // smart_contracts/fry_miner_reward_pool/contract.py:332
+    // smart_contracts/fry_miner_reward_pool/contract.py:341
     // assert total_claimable_tfry > 0 or total_claimable_fnode > 0, "nothing to claim"
     bnz claim_bool_true@3
     dup
@@ -1479,38 +1603,38 @@ claim_bool_true@3:
     intc_1 // 1
 
 claim_bool_merge@5:
-    // smart_contracts/fry_miner_reward_pool/contract.py:332
+    // smart_contracts/fry_miner_reward_pool/contract.py:341
     // assert total_claimable_tfry > 0 or total_claimable_fnode > 0, "nothing to claim"
     assert // nothing to claim
-    // smart_contracts/fry_miner_reward_pool/contract.py:334
+    // smart_contracts/fry_miner_reward_pool/contract.py:343
     // fee_bps = self.fee_bps
     intc_0 // 0
-    bytec 6 // "fee_bps"
+    bytec 7 // "fee_bps"
     app_global_get_ex
     swap
     bury 21
     assert // check self.fee_bps exists
-    // smart_contracts/fry_miner_reward_pool/contract.py:335
+    // smart_contracts/fry_miner_reward_pool/contract.py:344
     // total_user_tfry = UInt64(0)
     intc_0 // 0
     bury 16
-    // smart_contracts/fry_miner_reward_pool/contract.py:336
+    // smart_contracts/fry_miner_reward_pool/contract.py:345
     // total_fee_tfry = UInt64(0)
     intc_0 // 0
     bury 18
-    // smart_contracts/fry_miner_reward_pool/contract.py:337
+    // smart_contracts/fry_miner_reward_pool/contract.py:346
     // total_user_fnode = UInt64(0)
     intc_0 // 0
     bury 17
-    // smart_contracts/fry_miner_reward_pool/contract.py:338
+    // smart_contracts/fry_miner_reward_pool/contract.py:347
     // total_fee_fnode = UInt64(0)
     intc_0 // 0
     bury 19
-    // smart_contracts/fry_miner_reward_pool/contract.py:340
+    // smart_contracts/fry_miner_reward_pool/contract.py:349
     // if total_claimable_tfry > 0:
     dig 1
     bz claim_after_if_else@7
-    // smart_contracts/fry_miner_reward_pool/contract.py:341-343
+    // smart_contracts/fry_miner_reward_pool/contract.py:350-352
     // user_amt, fee_amt = _compute_claim(
     //     total_claimable_tfry, matured_tfry, claimed_tfry, fee_bps
     // )
@@ -1523,11 +1647,11 @@ claim_bool_merge@5:
     bury 16
 
 claim_after_if_else@7:
-    // smart_contracts/fry_miner_reward_pool/contract.py:347
+    // smart_contracts/fry_miner_reward_pool/contract.py:356
     // if total_claimable_fnode > 0:
     dup
     bz claim_after_if_else@9
-    // smart_contracts/fry_miner_reward_pool/contract.py:348-350
+    // smart_contracts/fry_miner_reward_pool/contract.py:357-359
     // user_amt, fee_amt = _compute_claim(
     //     total_claimable_fnode, matured_fnode, claimed_fnode, fee_bps
     // )
@@ -1540,12 +1664,12 @@ claim_after_if_else@7:
     bury 17
 
 claim_after_if_else@9:
-    // smart_contracts/fry_miner_reward_pool/contract.py:354-355
+    // smart_contracts/fry_miner_reward_pool/contract.py:363-364
     // # Send tokens to user
     // if total_user_tfry > 0:
     dig 15
     bz claim_after_if_else@12
-    // smart_contracts/fry_miner_reward_pool/contract.py:356-361
+    // smart_contracts/fry_miner_reward_pool/contract.py:365-370
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=sender,
@@ -1559,15 +1683,15 @@ claim_after_if_else@9:
     itxn_field AssetReceiver
     dig 14
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:356
+    // smart_contracts/fry_miner_reward_pool/contract.py:365
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:360
+    // smart_contracts/fry_miner_reward_pool/contract.py:369
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:356-361
+    // smart_contracts/fry_miner_reward_pool/contract.py:365-370
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=sender,
@@ -1577,11 +1701,11 @@ claim_after_if_else@9:
     itxn_submit
 
 claim_after_if_else@12:
-    // smart_contracts/fry_miner_reward_pool/contract.py:362
+    // smart_contracts/fry_miner_reward_pool/contract.py:371
     // if total_user_fnode > 0:
     dig 16
     bz claim_after_if_else@15
-    // smart_contracts/fry_miner_reward_pool/contract.py:363-368
+    // smart_contracts/fry_miner_reward_pool/contract.py:372-377
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=sender,
@@ -1595,15 +1719,15 @@ claim_after_if_else@12:
     itxn_field AssetReceiver
     dig 13
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:363
+    // smart_contracts/fry_miner_reward_pool/contract.py:372
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:367
+    // smart_contracts/fry_miner_reward_pool/contract.py:376
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:363-368
+    // smart_contracts/fry_miner_reward_pool/contract.py:372-377
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=sender,
@@ -1613,20 +1737,20 @@ claim_after_if_else@12:
     itxn_submit
 
 claim_after_if_else@15:
-    // smart_contracts/fry_miner_reward_pool/contract.py:370-371
+    // smart_contracts/fry_miner_reward_pool/contract.py:379-380
     // # Send fees
     // fee_addr = self.fee_address
     intc_0 // 0
-    bytec 5 // "fee_address"
+    bytec 6 // "fee_address"
     app_global_get_ex
     swap
     bury 22
     assert // check self.fee_address exists
-    // smart_contracts/fry_miner_reward_pool/contract.py:372
+    // smart_contracts/fry_miner_reward_pool/contract.py:381
     // if total_fee_tfry > 0:
     dig 17
     bz claim_after_if_else@18
-    // smart_contracts/fry_miner_reward_pool/contract.py:373-378
+    // smart_contracts/fry_miner_reward_pool/contract.py:382-387
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=fee_addr,
@@ -1640,15 +1764,15 @@ claim_after_if_else@15:
     itxn_field AssetReceiver
     dig 14
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:373
+    // smart_contracts/fry_miner_reward_pool/contract.py:382
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:377
+    // smart_contracts/fry_miner_reward_pool/contract.py:386
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:373-378
+    // smart_contracts/fry_miner_reward_pool/contract.py:382-387
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=fee_addr,
@@ -1658,11 +1782,11 @@ claim_after_if_else@15:
     itxn_submit
 
 claim_after_if_else@18:
-    // smart_contracts/fry_miner_reward_pool/contract.py:379
+    // smart_contracts/fry_miner_reward_pool/contract.py:388
     // if total_fee_fnode > 0:
     dig 18
     bz claim_after_if_else@21
-    // smart_contracts/fry_miner_reward_pool/contract.py:380-385
+    // smart_contracts/fry_miner_reward_pool/contract.py:389-394
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=fee_addr,
@@ -1676,15 +1800,15 @@ claim_after_if_else@18:
     itxn_field AssetReceiver
     dig 13
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:380
+    // smart_contracts/fry_miner_reward_pool/contract.py:389
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:384
+    // smart_contracts/fry_miner_reward_pool/contract.py:393
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:380-385
+    // smart_contracts/fry_miner_reward_pool/contract.py:389-394
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=fee_addr,
@@ -1694,15 +1818,15 @@ claim_after_if_else@18:
     itxn_submit
 
 claim_after_if_else@21:
-    // smart_contracts/fry_miner_reward_pool/contract.py:395
+    // smart_contracts/fry_miner_reward_pool/contract.py:404
     // last_update_epoch=state.last_update_epoch,
     dig 10
     extract 48 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:396
+    // smart_contracts/fry_miner_reward_pool/contract.py:405
     // last_claim_time=arc4.UInt64(Global.latest_timestamp),
     global LatestTimestamp
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:387-397
+    // smart_contracts/fry_miner_reward_pool/contract.py:396-406
     // # Update box — mark all as claimed
     // self.wallets[sender] = WalletState(
     //     entitled_tfry=state.entitled_tfry,
@@ -1735,11 +1859,11 @@ claim_after_if_else@21:
     dig 12
     swap
     box_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:399-400
+    // smart_contracts/fry_miner_reward_pool/contract.py:408-409
     // # Update global counters
     // self.total_distributed_tfry += total_user_tfry + total_fee_tfry
     intc_0 // 0
-    bytec_1 // "total_distributed_tfry"
+    bytec_2 // "total_distributed_tfry"
     app_global_get_ex
     assert // check self.total_distributed_tfry exists
     dig 16
@@ -1748,13 +1872,13 @@ claim_after_if_else@21:
     cover 3
     +
     +
-    bytec_1 // "total_distributed_tfry"
+    bytec_2 // "total_distributed_tfry"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:401
+    // smart_contracts/fry_miner_reward_pool/contract.py:410
     // self.total_distributed_fnode += total_user_fnode + total_fee_fnode
     intc_0 // 0
-    bytec_2 // "total_distributed_fnode"
+    bytec_3 // "total_distributed_fnode"
     app_global_get_ex
     assert // check self.total_distributed_fnode exists
     dig 18
@@ -1763,31 +1887,31 @@ claim_after_if_else@21:
     cover 3
     +
     +
-    bytec_2 // "total_distributed_fnode"
+    bytec_3 // "total_distributed_fnode"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:402
+    // smart_contracts/fry_miner_reward_pool/contract.py:411
     // self.total_fees_tfry += total_fee_tfry
     intc_0 // 0
-    bytec 11 // "total_fees_tfry"
+    bytec 12 // "total_fees_tfry"
     app_global_get_ex
     assert // check self.total_fees_tfry exists
     uncover 2
     +
-    bytec 11 // "total_fees_tfry"
+    bytec 12 // "total_fees_tfry"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:403
+    // smart_contracts/fry_miner_reward_pool/contract.py:412
     // self.total_fees_fnode += total_fee_fnode
     intc_0 // 0
-    bytec 12 // "total_fees_fnode"
+    bytec 13 // "total_fees_fnode"
     app_global_get_ex
     assert // check self.total_fees_fnode exists
     +
-    bytec 12 // "total_fees_fnode"
+    bytec 13 // "total_fees_fnode"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:310
+    // smart_contracts/fry_miner_reward_pool/contract.py:319
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -1799,7 +1923,7 @@ claim_bool_false@4:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.claim_matured_only[routing]() -> void:
 claim_matured_only:
-    // smart_contracts/fry_miner_reward_pool/contract.py:405
+    // smart_contracts/fry_miner_reward_pool/contract.py:414
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1815,36 +1939,36 @@ claim_matured_only:
     ==
     assert // invalid number of bytes for arc4.uint64
     btoi
-    // smart_contracts/fry_miner_reward_pool/contract.py:408
+    // smart_contracts/fry_miner_reward_pool/contract.py:417
     // assert self.paused == 0, "paused"
     intc_0 // 0
-    bytec_3 // "paused"
+    bytec 4 // "paused"
     app_global_get_ex
     assert // check self.paused exists
     !
     assert // paused
-    // smart_contracts/fry_miner_reward_pool/contract.py:409
+    // smart_contracts/fry_miner_reward_pool/contract.py:418
     // sender = Txn.sender
     txn Sender
-    // smart_contracts/fry_miner_reward_pool/contract.py:410
+    // smart_contracts/fry_miner_reward_pool/contract.py:419
     // assert sender in self.wallets, "no rewards"
-    bytec 4 // 0x77
-    // smart_contracts/fry_miner_reward_pool/contract.py:409
+    bytec 5 // 0x77
+    // smart_contracts/fry_miner_reward_pool/contract.py:418
     // sender = Txn.sender
     txn Sender
-    // smart_contracts/fry_miner_reward_pool/contract.py:410
+    // smart_contracts/fry_miner_reward_pool/contract.py:419
     // assert sender in self.wallets, "no rewards"
     concat
     dupn 2
     box_len
     bury 1
     assert // no rewards
-    // smart_contracts/fry_miner_reward_pool/contract.py:412
+    // smart_contracts/fry_miner_reward_pool/contract.py:421
     // state = self.wallets[sender].copy()
     box_get
     pop
     dupn 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:414
+    // smart_contracts/fry_miner_reward_pool/contract.py:423
     // matured_tfry = state.matured_tfry.native
     extract 16 8
     swap
@@ -1853,7 +1977,7 @@ claim_matured_only:
     extract_uint64
     dup
     uncover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:415
+    // smart_contracts/fry_miner_reward_pool/contract.py:424
     // matured_fnode = state.matured_fnode.native
     dup
     extract 24 8
@@ -1862,7 +1986,7 @@ claim_matured_only:
     pushint 24
     extract_uint64
     cover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:416
+    // smart_contracts/fry_miner_reward_pool/contract.py:425
     // claimed_tfry = state.claimed_tfry.native
     dup
     intc_3 // 32
@@ -1870,24 +1994,24 @@ claim_matured_only:
     dup
     cover 2
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:417
+    // smart_contracts/fry_miner_reward_pool/contract.py:426
     // claimed_fnode = state.claimed_fnode.native
     pushint 40
     extract_uint64
     cover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:419
+    // smart_contracts/fry_miner_reward_pool/contract.py:428
     // matured_claimable_tfry = UInt64(0)
     intc_0 // 0
     cover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:420
+    // smart_contracts/fry_miner_reward_pool/contract.py:429
     // matured_claimable_fnode = UInt64(0)
     intc_0 // 0
     cover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:422
+    // smart_contracts/fry_miner_reward_pool/contract.py:431
     // if matured_tfry > claimed_tfry:
     >
     bz claim_matured_only_after_if_else@3
-    // smart_contracts/fry_miner_reward_pool/contract.py:423
+    // smart_contracts/fry_miner_reward_pool/contract.py:432
     // matured_claimable_tfry = matured_tfry - claimed_tfry
     dig 6
     dig 4
@@ -1895,13 +2019,13 @@ claim_matured_only:
     bury 2
 
 claim_matured_only_after_if_else@3:
-    // smart_contracts/fry_miner_reward_pool/contract.py:424
+    // smart_contracts/fry_miner_reward_pool/contract.py:433
     // if matured_fnode > claimed_fnode:
     dig 4
     dig 3
     >
     bz claim_matured_only_after_if_else@5
-    // smart_contracts/fry_miner_reward_pool/contract.py:425
+    // smart_contracts/fry_miner_reward_pool/contract.py:434
     // matured_claimable_fnode = matured_fnode - claimed_fnode
     dig 4
     dig 3
@@ -1909,7 +2033,7 @@ claim_matured_only_after_if_else@3:
     bury 1
 
 claim_matured_only_after_if_else@5:
-    // smart_contracts/fry_miner_reward_pool/contract.py:427
+    // smart_contracts/fry_miner_reward_pool/contract.py:436
     // assert matured_claimable_tfry > 0 or matured_claimable_fnode > 0, "nothing matured"
     dig 1
     bnz claim_matured_only_bool_true@7
@@ -1920,14 +2044,14 @@ claim_matured_only_bool_true@7:
     intc_1 // 1
 
 claim_matured_only_bool_merge@9:
-    // smart_contracts/fry_miner_reward_pool/contract.py:427
+    // smart_contracts/fry_miner_reward_pool/contract.py:436
     // assert matured_claimable_tfry > 0 or matured_claimable_fnode > 0, "nothing matured"
     assert // nothing matured
-    // smart_contracts/fry_miner_reward_pool/contract.py:429
+    // smart_contracts/fry_miner_reward_pool/contract.py:438
     // if matured_claimable_tfry > 0:
     dig 1
     bz claim_matured_only_after_if_else@12
-    // smart_contracts/fry_miner_reward_pool/contract.py:430-435
+    // smart_contracts/fry_miner_reward_pool/contract.py:439-444
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=sender,
@@ -1941,15 +2065,15 @@ claim_matured_only_bool_merge@9:
     itxn_field AssetReceiver
     dig 12
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:430
+    // smart_contracts/fry_miner_reward_pool/contract.py:439
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:434
+    // smart_contracts/fry_miner_reward_pool/contract.py:443
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:430-435
+    // smart_contracts/fry_miner_reward_pool/contract.py:439-444
     // itxn.AssetTransfer(
     //     xfer_asset=tfry,
     //     asset_receiver=sender,
@@ -1959,11 +2083,11 @@ claim_matured_only_bool_merge@9:
     itxn_submit
 
 claim_matured_only_after_if_else@12:
-    // smart_contracts/fry_miner_reward_pool/contract.py:436
+    // smart_contracts/fry_miner_reward_pool/contract.py:445
     // if matured_claimable_fnode > 0:
     dup
     bz claim_matured_only_after_if_else@15
-    // smart_contracts/fry_miner_reward_pool/contract.py:437-442
+    // smart_contracts/fry_miner_reward_pool/contract.py:446-451
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=sender,
@@ -1977,15 +2101,15 @@ claim_matured_only_after_if_else@12:
     itxn_field AssetReceiver
     dig 11
     itxn_field XferAsset
-    // smart_contracts/fry_miner_reward_pool/contract.py:437
+    // smart_contracts/fry_miner_reward_pool/contract.py:446
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // smart_contracts/fry_miner_reward_pool/contract.py:441
+    // smart_contracts/fry_miner_reward_pool/contract.py:450
     // fee=0,
     intc_0 // 0
     itxn_field Fee
-    // smart_contracts/fry_miner_reward_pool/contract.py:437-442
+    // smart_contracts/fry_miner_reward_pool/contract.py:446-451
     // itxn.AssetTransfer(
     //     xfer_asset=fnode,
     //     asset_receiver=sender,
@@ -1995,7 +2119,7 @@ claim_matured_only_after_if_else@12:
     itxn_submit
 
 claim_matured_only_after_if_else@15:
-    // smart_contracts/fry_miner_reward_pool/contract.py:444-445
+    // smart_contracts/fry_miner_reward_pool/contract.py:453-454
     // # Update claimed to include only what was just claimed (matured portion)
     // new_claimed_tfry = claimed_tfry + matured_claimable_tfry
     dig 3
@@ -2003,39 +2127,39 @@ claim_matured_only_after_if_else@15:
     dup
     cover 2
     +
-    // smart_contracts/fry_miner_reward_pool/contract.py:446
+    // smart_contracts/fry_miner_reward_pool/contract.py:455
     // new_claimed_fnode = claimed_fnode + matured_claimable_fnode
     dig 4
     dig 3
     dup
     cover 4
     +
-    // smart_contracts/fry_miner_reward_pool/contract.py:449
+    // smart_contracts/fry_miner_reward_pool/contract.py:458
     // entitled_tfry=state.entitled_tfry,
     dig 12
     dup
     extract 0 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:450
+    // smart_contracts/fry_miner_reward_pool/contract.py:459
     // entitled_fnode=state.entitled_fnode,
     dig 1
     extract 8 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:453
+    // smart_contracts/fry_miner_reward_pool/contract.py:462
     // claimed_tfry=arc4.UInt64(new_claimed_tfry),
     uncover 4
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:454
+    // smart_contracts/fry_miner_reward_pool/contract.py:463
     // claimed_fnode=arc4.UInt64(new_claimed_fnode),
     uncover 4
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:455
+    // smart_contracts/fry_miner_reward_pool/contract.py:464
     // last_update_epoch=state.last_update_epoch,
     uncover 4
     extract 48 8
-    // smart_contracts/fry_miner_reward_pool/contract.py:456
+    // smart_contracts/fry_miner_reward_pool/contract.py:465
     // last_claim_time=arc4.UInt64(Global.latest_timestamp),
     global LatestTimestamp
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:448-457
+    // smart_contracts/fry_miner_reward_pool/contract.py:457-466
     // self.wallets[sender] = WalletState(
     //     entitled_tfry=state.entitled_tfry,
     //     entitled_fnode=state.entitled_fnode,
@@ -2064,27 +2188,27 @@ claim_matured_only_after_if_else@15:
     dig 12
     swap
     box_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:459
+    // smart_contracts/fry_miner_reward_pool/contract.py:468
     // self.total_distributed_tfry += matured_claimable_tfry
     intc_0 // 0
-    bytec_1 // "total_distributed_tfry"
+    bytec_2 // "total_distributed_tfry"
     app_global_get_ex
     assert // check self.total_distributed_tfry exists
     +
-    bytec_1 // "total_distributed_tfry"
+    bytec_2 // "total_distributed_tfry"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:460
+    // smart_contracts/fry_miner_reward_pool/contract.py:469
     // self.total_distributed_fnode += matured_claimable_fnode
     intc_0 // 0
-    bytec_2 // "total_distributed_fnode"
+    bytec_3 // "total_distributed_fnode"
     app_global_get_ex
     assert // check self.total_distributed_fnode exists
     +
-    bytec_2 // "total_distributed_fnode"
+    bytec_3 // "total_distributed_fnode"
     swap
     app_global_put
-    // smart_contracts/fry_miner_reward_pool/contract.py:405
+    // smart_contracts/fry_miner_reward_pool/contract.py:414
     // @arc4.abimethod
     intc_1 // 1
     return
@@ -2096,7 +2220,7 @@ claim_matured_only_bool_false@8:
 
 // smart_contracts.fry_miner_reward_pool.contract.FryMinerRewardPool.get_wallet_state[routing]() -> void:
 get_wallet_state:
-    // smart_contracts/fry_miner_reward_pool/contract.py:464
+    // smart_contracts/fry_miner_reward_pool/contract.py:473
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -2104,22 +2228,22 @@ get_wallet_state:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // smart_contracts/fry_miner_reward_pool/contract.py:467
+    // smart_contracts/fry_miner_reward_pool/contract.py:476
     // assert wallet in self.wallets, "no rewards"
-    bytec 4 // 0x77
+    bytec 5 // 0x77
     swap
     concat
     dup
     box_len
     bury 1
     assert // no rewards
-    // smart_contracts/fry_miner_reward_pool/contract.py:468
+    // smart_contracts/fry_miner_reward_pool/contract.py:477
     // return self.wallets[wallet].copy()
     box_get
     pop
-    // smart_contracts/fry_miner_reward_pool/contract.py:464
+    // smart_contracts/fry_miner_reward_pool/contract.py:473
     // @arc4.abimethod(readonly=True)
-    bytec 15 // 0x151f7c75
+    bytec 16 // 0x151f7c75
     swap
     concat
     log
@@ -2131,7 +2255,7 @@ get_wallet_state:
 get_claimable:
     pushbytes ""
     dupn 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:470
+    // smart_contracts/fry_miner_reward_pool/contract.py:479
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -2139,25 +2263,25 @@ get_claimable:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // smart_contracts/fry_miner_reward_pool/contract.py:473
+    // smart_contracts/fry_miner_reward_pool/contract.py:482
     // assert wallet in self.wallets, "no rewards"
-    bytec 4 // 0x77
+    bytec 5 // 0x77
     swap
     concat
     dup
     box_len
     bury 1
     assert // no rewards
-    // smart_contracts/fry_miner_reward_pool/contract.py:474
+    // smart_contracts/fry_miner_reward_pool/contract.py:483
     // state = self.wallets[wallet].copy()
     box_get
     pop
-    // smart_contracts/fry_miner_reward_pool/contract.py:476
+    // smart_contracts/fry_miner_reward_pool/contract.py:485
     // entitled_tfry = state.entitled_tfry.native
     dup
     intc_0 // 0
     extract_uint64
-    // smart_contracts/fry_miner_reward_pool/contract.py:477
+    // smart_contracts/fry_miner_reward_pool/contract.py:486
     // matured_tfry = state.matured_tfry.native
     dig 1
     pushint 16
@@ -2165,7 +2289,7 @@ get_claimable:
     dup
     cover 3
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:478
+    // smart_contracts/fry_miner_reward_pool/contract.py:487
     // claimed_tfry = state.claimed_tfry.native
     dig 1
     intc_3 // 32
@@ -2173,45 +2297,45 @@ get_claimable:
     dup
     cover 2
     cover 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:479
+    // smart_contracts/fry_miner_reward_pool/contract.py:488
     // entitled_fnode = state.entitled_fnode.native
     dig 2
     intc_2 // 8
     extract_uint64
     cover 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:480
+    // smart_contracts/fry_miner_reward_pool/contract.py:489
     // matured_fnode = state.matured_fnode.native
     dig 2
     pushint 24
     extract_uint64
     cover 4
-    // smart_contracts/fry_miner_reward_pool/contract.py:481
+    // smart_contracts/fry_miner_reward_pool/contract.py:490
     // claimed_fnode = state.claimed_fnode.native
     uncover 2
     pushint 40
     extract_uint64
     cover 3
-    // smart_contracts/fry_miner_reward_pool/contract.py:483
+    // smart_contracts/fry_miner_reward_pool/contract.py:492
     // total_tfry = entitled_tfry - claimed_tfry
     dig 1
     -
     cover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:484
+    // smart_contracts/fry_miner_reward_pool/contract.py:493
     // matured_free_tfry = UInt64(0)
     intc_0 // 0
     cover 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:485
+    // smart_contracts/fry_miner_reward_pool/contract.py:494
     // if matured_tfry > claimed_tfry:
     >
     bz get_claimable_after_if_else@5
-    // smart_contracts/fry_miner_reward_pool/contract.py:486
+    // smart_contracts/fry_miner_reward_pool/contract.py:495
     // matured_free_tfry = matured_tfry - claimed_tfry
     dig 6
     dig 6
     -
     dup
     bury 2
-    // smart_contracts/fry_miner_reward_pool/contract.py:487
+    // smart_contracts/fry_miner_reward_pool/contract.py:496
     // if matured_free_tfry > total_tfry:
     dig 2
     >
@@ -2220,12 +2344,12 @@ get_claimable:
     bury 1
 
 get_claimable_after_if_else@5:
-    // smart_contracts/fry_miner_reward_pool/contract.py:489
+    // smart_contracts/fry_miner_reward_pool/contract.py:498
     // recent_tfry = total_tfry - matured_free_tfry
     dup2
     -
     bury 9
-    // smart_contracts/fry_miner_reward_pool/contract.py:491
+    // smart_contracts/fry_miner_reward_pool/contract.py:500
     // total_fnode = entitled_fnode - claimed_fnode
     dig 4
     dig 3
@@ -2233,23 +2357,23 @@ get_claimable_after_if_else@5:
     cover 2
     -
     bury 9
-    // smart_contracts/fry_miner_reward_pool/contract.py:492
+    // smart_contracts/fry_miner_reward_pool/contract.py:501
     // matured_free_fnode = UInt64(0)
     intc_0 // 0
     bury 11
-    // smart_contracts/fry_miner_reward_pool/contract.py:493
+    // smart_contracts/fry_miner_reward_pool/contract.py:502
     // if matured_fnode > claimed_fnode:
     dig 4
     <
     bz get_claimable_after_if_else@9
-    // smart_contracts/fry_miner_reward_pool/contract.py:494
+    // smart_contracts/fry_miner_reward_pool/contract.py:503
     // matured_free_fnode = matured_fnode - claimed_fnode
     dig 3
     dig 3
     -
     dup
     bury 11
-    // smart_contracts/fry_miner_reward_pool/contract.py:495
+    // smart_contracts/fry_miner_reward_pool/contract.py:504
     // if matured_free_fnode > total_fnode:
     dig 8
     >
@@ -2258,26 +2382,26 @@ get_claimable_after_if_else@5:
     bury 10
 
 get_claimable_after_if_else@9:
-    // smart_contracts/fry_miner_reward_pool/contract.py:497
+    // smart_contracts/fry_miner_reward_pool/contract.py:506
     // recent_fnode = total_fnode - matured_free_fnode
     dig 7
     dig 10
     dup
     cover 2
     -
-    // smart_contracts/fry_miner_reward_pool/contract.py:500
+    // smart_contracts/fry_miner_reward_pool/contract.py:509
     // (arc4.UInt64(matured_free_tfry), arc4.UInt64(recent_tfry),
     dig 2
     itob
     dig 11
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:501
+    // smart_contracts/fry_miner_reward_pool/contract.py:510
     // arc4.UInt64(matured_free_fnode), arc4.UInt64(recent_fnode))
     uncover 3
     itob
     uncover 3
     itob
-    // smart_contracts/fry_miner_reward_pool/contract.py:499-502
+    // smart_contracts/fry_miner_reward_pool/contract.py:508-511
     // return arc4.Tuple(
     //     (arc4.UInt64(matured_free_tfry), arc4.UInt64(recent_tfry),
     //      arc4.UInt64(matured_free_fnode), arc4.UInt64(recent_fnode))
@@ -2289,9 +2413,9 @@ get_claimable_after_if_else@9:
     concat
     swap
     concat
-    // smart_contracts/fry_miner_reward_pool/contract.py:470
+    // smart_contracts/fry_miner_reward_pool/contract.py:479
     // @arc4.abimethod(readonly=True)
-    bytec 15 // 0x151f7c75
+    bytec 16 // 0x151f7c75
     swap
     concat
     log

@@ -42,7 +42,8 @@ FNODE_ID = 2485202024
 FEE_BPS = 3000
 MATURATION_EPOCHS = 4
 
-AUTHORITY_ADDR = "HXWYLLZDPTM5OXS3DPARMTG52RSBMMCQNKT4L2LZRRXYPNAWJBT6VIW6WU"
+OWNER_ADDR = "E2F2LT2INE75DBOYHQXTCTOP2PAP5MHAXQRXTTCCXFKHQTVG36DJONBQZE"
+ADMIN_ADDR = "HXWYLLZDPTM5OXS3DPARMTG52RSBMMCQNKT4L2LZRRXYPNAWJBT6VIW6WU"
 FEE_ADDR = "AM53XSHRSSSZMNFAMKVAJFXHPMIYYUUBOVCODJ2LQY3D27CVXAHAPIXYXQ"
 
 # Set after deploying via --action deploy-budget-helper.
@@ -52,7 +53,8 @@ BUDGET_APP_ID = 0
 
 # ABI methods
 METHODS = {
-    "create": Method.from_signature("create(uint64,uint64,address,uint64,uint64)void"),
+    "create": Method.from_signature("create(uint64,uint64,address,address,address,uint64,uint64)void"),
+    "set_admin": Method.from_signature("set_admin(address)void"),
     "opt_in_assets": Method.from_signature("opt_in_assets(uint64,uint64,pay)void"),
     "fund_pool": Method.from_signature("fund_pool(axfer)void"),
     "set_merkle_root": Method.from_signature("set_merkle_root(byte[])void"),
@@ -84,7 +86,8 @@ def get_signer(args):
     sk = mnemonic.to_private_key(mnemonic_val)
     derived_addr = account.address_from_private_key(sk)
     print(f"Signer address (rekey): {derived_addr}")
-    print(f"Authority address (sender): {AUTHORITY_ADDR}")
+    print(f"Admin address (sender): {ADMIN_ADDR}")
+    print(f"Owner address: {OWNER_ADDR}")
     return sk, AccountTransactionSigner(sk)
 
 
@@ -116,13 +119,13 @@ def action_deploy(client, signer_sk, signer, args):
     atc.add_method_call(
         app_id=0,
         method=METHODS["create"],
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp,
         signer=signer,
-        method_args=[TFRY_ID, FNODE_ID, FEE_ADDR, FEE_BPS, MATURATION_EPOCHS],
+        method_args=[TFRY_ID, FNODE_ID, FEE_ADDR, OWNER_ADDR, ADMIN_ADDR, FEE_BPS, MATURATION_EPOCHS],
         approval_program=approval_bytes,
         clear_program=clear_bytes,
-        global_schema=transaction.StateSchema(num_uints=10, num_byte_slices=3),
+        global_schema=transaction.StateSchema(num_uints=10, num_byte_slices=4),
         local_schema=transaction.StateSchema(num_uints=0, num_byte_slices=0),
         extra_pages=extra_pages,
         on_complete=transaction.OnComplete.NoOpOC,
@@ -151,7 +154,7 @@ def action_opt_in(client, signer_sk, signer, args):
     sp.fee = 3000  # Cover 2 inner txns
 
     mbr_pay = transaction.PaymentTxn(
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=client.suggested_params(),
         receiver=app_addr,
         amt=300_000,  # MBR for 2 ASA opt-ins
@@ -161,7 +164,7 @@ def action_opt_in(client, signer_sk, signer, args):
     atc.add_method_call(
         app_id=args.app_id,
         method=METHODS["opt_in_assets"],
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp,
         signer=signer,
         method_args=[TFRY_ID, FNODE_ID, TransactionWithSigner(mbr_pay, signer)],
@@ -186,7 +189,7 @@ def action_fund(client, signer_sk, signer, args):
     sp.fee = 2000
 
     axfer = transaction.AssetTransferTxn(
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=client.suggested_params(),
         receiver=app_addr,
         amt=amount,
@@ -197,7 +200,7 @@ def action_fund(client, signer_sk, signer, args):
     atc.add_method_call(
         app_id=args.app_id,
         method=METHODS["fund_pool"],
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp,
         signer=signer,
         method_args=[TransactionWithSigner(axfer, signer)],
@@ -265,7 +268,7 @@ def action_set_root(client, signer_sk, signer, args):
     atc.add_method_call(
         app_id=args.app_id,
         method=METHODS["set_merkle_root"],
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp,
         signer=signer,
         method_args=[root_bytes],
@@ -278,7 +281,7 @@ def action_set_root(client, signer_sk, signer, args):
 def action_preflight(client, args):
     """Check authority wallet balances vs requirements."""
     print(f"\n=== BALANCE PRE-FLIGHT ===")
-    info = client.account_info(AUTHORITY_ADDR)
+    info = client.account_info(ADMIN_ADDR)
     algo = info["amount"]
     tfry_bal = 0
     fnode_bal = 0
@@ -292,7 +295,7 @@ def action_preflight(client, args):
     req_tfry = args.required_tfry
     req_fnode = args.required_fnode
 
-    print(f"Authority: {AUTHORITY_ADDR}")
+    print(f"Authority: {ADMIN_ADDR}")
     print(f"  ALGO:  {algo / 1_000_000:,.2f}  (need {req_algo / 1_000_000:,.2f})")
     print(f"  tFRY:  {tfry_bal / 1_000_000:,.2f}  (need {req_tfry / 1_000_000:,.2f})")
     print(f"  fNODE: {fnode_bal / 1_000_000:,.2f}  (need {req_fnode / 1_000_000:,.2f})")
@@ -315,6 +318,35 @@ def action_preflight(client, args):
         sys.exit(1)
 
 
+# ── Admin Rotation ───────────────────────────────────────────────────
+
+
+def action_set_admin(client, signer_sk, signer, args):
+    """Rotate admin address. Owner-only — requires owner's signing key."""
+    print("\n=== SET ADMIN ===")
+    if not args.new_admin:
+        print("ERROR: --new-admin required")
+        sys.exit(1)
+
+    print(f"  New admin: {args.new_admin}")
+
+    sp = client.suggested_params()
+    sp.flat_fee = True
+    sp.fee = 1000
+
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id=args.app_id,
+        method=METHODS["set_admin"],
+        sender=OWNER_ADDR,
+        sp=sp,
+        signer=signer,
+        method_args=[args.new_admin],
+    )
+    result = atc.execute(client, 4)
+    print(f"  Admin rotated. Txn: {result.tx_ids[0]}")
+
+
 # ── Budget Helper & Claim ────────────────────────────────────────────
 
 
@@ -334,7 +366,7 @@ def action_deploy_budget_helper(client, signer_sk, signer, args):
 
     sp = client.suggested_params()
     txn = transaction.ApplicationCreateTxn(
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp,
         on_complete=transaction.OnComplete.NoOpOC,
         approval_program=approval_bytes,
@@ -402,7 +434,7 @@ def action_claim_preseed(client, signer_sk, signer, args):
     sp_noop.flat_fee = True
     sp_noop.fee = 1000
     noop_txn = transaction.ApplicationCallTxn(
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp_noop,
         index=budget_app_id,
         on_complete=transaction.OnComplete.NoOpOC,
@@ -410,7 +442,7 @@ def action_claim_preseed(client, signer_sk, signer, args):
 
     # MBR payment for box creation
     mbr_pay = transaction.PaymentTxn(
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=client.suggested_params(),
         receiver=app_addr,
         amt=100_000,
@@ -426,7 +458,7 @@ def action_claim_preseed(client, signer_sk, signer, args):
     atc.add_method_call(
         app_id=args.app_id,
         method=METHODS["claim_preseed"],
-        sender=AUTHORITY_ADDR,
+        sender=ADMIN_ADDR,
         sp=sp,
         signer=signer,
         method_args=[
@@ -453,7 +485,7 @@ def main():
     parser = argparse.ArgumentParser(description="Deploy FryMinerRewardPool to mainnet")
     parser.add_argument("--action", required=True, choices=[
         "deploy", "opt-in", "fund", "verify", "preflight",
-        "set-root", "deploy-budget-helper", "claim-preseed",
+        "set-root", "set-admin", "deploy-budget-helper", "claim-preseed",
     ])
     parser.add_argument("--app-id", type=int, default=0)
     parser.add_argument("--algod-url", default="http://100.69.195.100:4190")
@@ -466,6 +498,7 @@ def main():
     parser.add_argument("--merkle-json", default="", help="Path to Merkle proofs JSON")
     parser.add_argument("--wallet", default="", help="Wallet address (for claim-preseed)")
     parser.add_argument("--budget-app-id", type=int, default=0, help="Budget helper app ID")
+    parser.add_argument("--new-admin", default="", help="New admin address (for set-admin)")
     args = parser.parse_args()
 
     client = get_client(args)
@@ -503,6 +536,12 @@ def main():
             print("ERROR: --app-id, --asset, --amount required")
             sys.exit(1)
         action_fund(client, signer_sk, signer, args)
+
+    elif args.action == "set-admin":
+        if args.app_id == 0:
+            print("ERROR: --app-id required")
+            sys.exit(1)
+        action_set_admin(client, signer_sk, signer, args)
 
     elif args.action == "deploy-budget-helper":
         action_deploy_budget_helper(client, signer_sk, signer, args)

@@ -49,7 +49,7 @@ POOL_FNODE = 500_000_000_000  # 500k fNODE in microunits
 
 # ABI method signatures (from ARC56)
 METHODS = {
-    "create": Method.from_signature("create(uint64,uint64,address,uint64,uint64)void"),
+    "create": Method.from_signature("create(uint64,uint64,address,address,address,uint64,uint64)void"),
     "opt_in_assets": Method.from_signature("opt_in_assets(uint64,uint64,pay)void"),
     "fund_pool": Method.from_signature("fund_pool(axfer)void"),
     "set_merkle_root": Method.from_signature("set_merkle_root(byte[])void"),
@@ -61,6 +61,8 @@ METHODS = {
     ),
     "advance_epoch": Method.from_signature("advance_epoch()void"),
     "claim": Method.from_signature("claim(uint64,uint64)void"),
+    "set_admin": Method.from_signature("set_admin(address)void"),
+    "pause": Method.from_signature("pause()void"),
 }
 
 
@@ -143,30 +145,37 @@ def kmd_client():
 
 @pytest.fixture(scope="module")
 def accounts(algod_client, kmd_client):
-    """Get 2 KMD accounts (admin, fee_addr) + generate 3 user accounts."""
+    """Get 3 KMD accounts (owner, admin, fee_addr) + generate 3 user accounts."""
     wallets = kmd_client.list_wallets()
     default = next(w for w in wallets if w["name"] == "unencrypted-default-wallet")
     handle = kmd_client.init_wallet_handle(default["id"], "")
     addrs = kmd_client.list_keys(handle)
 
     result = {}
-    # Admin = KMD account 0
-    admin_sk = kmd_client.export_key(handle, "", addrs[0])
-    result["admin"] = {
+    # Owner = KMD account 0 (deployer + ultimate authority)
+    owner_sk = kmd_client.export_key(handle, "", addrs[0])
+    result["owner"] = {
         "addr": addrs[0],
+        "sk": owner_sk,
+        "signer": AccountTransactionSigner(owner_sk),
+    }
+    # Admin = KMD account 1 (operational key, rotatable)
+    admin_sk = kmd_client.export_key(handle, "", addrs[1])
+    result["admin"] = {
+        "addr": addrs[1],
         "sk": admin_sk,
         "signer": AccountTransactionSigner(admin_sk),
     }
-    # Fee address = KMD account 1
-    fee_sk = kmd_client.export_key(handle, "", addrs[1])
+    # Fee address = KMD account 2
+    fee_sk = kmd_client.export_key(handle, "", addrs[2])
     result["fee_addr"] = {
-        "addr": addrs[1],
+        "addr": addrs[2],
         "sk": fee_sk,
         "signer": AccountTransactionSigner(fee_sk),
     }
     kmd_client.release_wallet_handle(handle)
 
-    # Generate 3 user accounts and fund from admin
+    # Generate 3 user accounts and fund from owner
     for name in ("user1", "user2", "user3"):
         sk, addr = account.generate_account()
         result[name] = {
@@ -177,9 +186,9 @@ def accounts(algod_client, kmd_client):
         # Fund with 10 ALGO
         sp = algod_client.suggested_params()
         txn = transaction.PaymentTxn(
-            sender=result["admin"]["addr"], sp=sp, receiver=addr, amt=10_000_000
+            sender=result["owner"]["addr"], sp=sp, receiver=addr, amt=10_000_000
         )
-        stxn = txn.sign(result["admin"]["sk"])
+        stxn = txn.sign(result["owner"]["sk"])
         txid = algod_client.send_transaction(stxn)
         wait_for_confirmation(algod_client, txid)
 
@@ -234,6 +243,7 @@ def opt_in_all(algod_client, accounts, test_asas):
 @pytest.fixture(scope="module")
 def deployed_app(algod_client, accounts, test_asas, opt_in_all):
     """Deploy contract, opt in ASAs, fund pool. Returns app_id."""
+    owner = accounts["owner"]
     admin = accounts["admin"]
     tfry_id = test_asas["tFRY"]
     fnode_id = test_asas["fNODE"]
@@ -251,19 +261,23 @@ def deployed_app(algod_client, accounts, test_asas, opt_in_all):
     _state["approval_size"] = len(approval_bytes)
     _state["extra_pages"] = extra_pages
 
-    # Deploy
+    # Deploy — owner deploys, passes both owner + admin addresses
     sp = get_sp(algod_client, fee=3000)
     atc = AtomicTransactionComposer()
     atc.add_method_call(
         app_id=0,
         method=METHODS["create"],
-        sender=admin["addr"],
+        sender=owner["addr"],
         sp=sp,
-        signer=admin["signer"],
-        method_args=[tfry_id, fnode_id, accounts["fee_addr"]["addr"], FEE_BPS, MATURATION_EPOCHS],
+        signer=owner["signer"],
+        method_args=[
+            tfry_id, fnode_id, accounts["fee_addr"]["addr"],
+            owner["addr"], admin["addr"],
+            FEE_BPS, MATURATION_EPOCHS,
+        ],
         approval_program=approval_bytes,
         clear_program=clear_bytes,
-        global_schema=transaction.StateSchema(num_uints=10, num_byte_slices=3),
+        global_schema=transaction.StateSchema(num_uints=10, num_byte_slices=4),
         local_schema=transaction.StateSchema(num_uints=0, num_byte_slices=0),
         extra_pages=extra_pages,
         on_complete=transaction.OnComplete.NoOpOC,
@@ -276,9 +290,9 @@ def deployed_app(algod_client, accounts, test_asas, opt_in_all):
     # Fund app with ALGO for MBR (opt-in + boxes)
     sp = algod_client.suggested_params()
     fund_txn = transaction.PaymentTxn(
-        sender=admin["addr"], sp=sp, receiver=app_addr, amt=1_000_000
+        sender=owner["addr"], sp=sp, receiver=app_addr, amt=1_000_000
     )
-    stxn = fund_txn.sign(admin["sk"])
+    stxn = fund_txn.sign(owner["sk"])
     txid = algod_client.send_transaction(stxn)
     wait_for_confirmation(algod_client, txid)
 
@@ -353,7 +367,7 @@ def deployed_app(algod_client, accounts, test_asas, opt_in_all):
     budget_clear_bytes = base64.b64decode(budget_clear["result"])
     sp = algod_client.suggested_params()
     budget_txn = transaction.ApplicationCreateTxn(
-        sender=admin["addr"],
+        sender=owner["addr"],
         sp=sp,
         on_complete=transaction.OnComplete.NoOpOC,
         approval_program=budget_approval_bytes,
@@ -361,7 +375,7 @@ def deployed_app(algod_client, accounts, test_asas, opt_in_all):
         global_schema=transaction.StateSchema(0, 0),
         local_schema=transaction.StateSchema(0, 0),
     )
-    stxn = budget_txn.sign(admin["sk"])
+    stxn = budget_txn.sign(owner["sk"])
     txid = algod_client.send_transaction(stxn)
     info = wait_for_confirmation(algod_client, txid)
     _state["budget_app_id"] = info["application-index"]
@@ -1093,3 +1107,65 @@ class TestE2ELifecycle:
         print(f"  Total distributed: {gs['total_distributed_tfry'] / 1e6:,.2f} tFRY, {gs['total_distributed_fnode'] / 1e6:,.2f} fNODE")
         print(f"  Total fees: {gs['total_fees_tfry'] / 1e6:,.2f} tFRY, {gs['total_fees_fnode'] / 1e6:,.2f} fNODE")
         print(f"\n  ALL BALANCES VERIFIED")
+
+    # ── Phase K: Admin Tier Enforcement ──────────────────────────────
+
+    def test_k_admin_cannot_pause(self, algod_client, accounts, test_asas, deployed_app):
+        """Admin (non-owner) cannot call owner-only pause method."""
+        app_id = deployed_app
+        admin = accounts["admin"]
+
+        sp = get_sp(algod_client, fee=1000)
+        atc = AtomicTransactionComposer()
+        atc.add_method_call(
+            app_id=app_id,
+            method=METHODS["pause"],
+            sender=admin["addr"],
+            sp=sp,
+            signer=admin["signer"],
+            method_args=[],
+        )
+
+        with pytest.raises(AlgodHTTPError, match="logic eval error"):
+            atc.execute(algod_client, 4)
+
+        print("\n  Admin cannot pause — correctly rejected (owner-only)")
+
+    def test_l_owner_can_set_admin(self, algod_client, accounts, test_asas, deployed_app):
+        """Owner can rotate admin address via set_admin."""
+        app_id = deployed_app
+        owner = accounts["owner"]
+        user1 = accounts["user1"]
+
+        # Rotate admin to user1
+        sp = get_sp(algod_client, fee=1000)
+        atc = AtomicTransactionComposer()
+        atc.add_method_call(
+            app_id=app_id,
+            method=METHODS["set_admin"],
+            sender=owner["addr"],
+            sp=sp,
+            signer=owner["signer"],
+            method_args=[user1["addr"]],
+        )
+        result = atc.execute(algod_client, 4)
+
+        # Verify admin changed in global state
+        gs = read_global_state(algod_client, app_id)
+        user1_bytes = encoding.decode_address(user1["addr"])
+        assert gs.get("admin") == user1_bytes, "admin not rotated"
+
+        # Rotate back to original admin for subsequent test integrity
+        sp = get_sp(algod_client, fee=1000)
+        atc2 = AtomicTransactionComposer()
+        atc2.add_method_call(
+            app_id=app_id,
+            method=METHODS["set_admin"],
+            sender=owner["addr"],
+            sp=sp,
+            signer=owner["signer"],
+            method_args=[accounts["admin"]["addr"]],
+        )
+        atc2.execute(algod_client, 4)
+
+        print(f"\n  Owner rotated admin to user1, then back. Txn: {result.tx_ids[0]}")

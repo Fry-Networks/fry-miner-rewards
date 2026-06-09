@@ -14,7 +14,8 @@ from smart_contracts.fry_miner_reward_pool.contract import FryMinerRewardPool, W
 def setup():
     """Standard test setup: context, accounts, assets, deployed contract."""
     with algopy_testing_context() as ctx:
-        authority = ctx.any.account(balance=10_000_000)
+        owner = ctx.any.account(balance=10_000_000)
+        admin = ctx.any.account(balance=10_000_000)
         user1 = ctx.any.account(balance=10_000_000)
         user2 = ctx.any.account(balance=10_000_000)
         fee_receiver = ctx.any.account(balance=10_000_000)
@@ -34,15 +35,17 @@ def setup():
             decimals=6,
         )
 
-        # Create contract
+        # Create contract — owner deploys, admin passed as param
         with ctx.txn.create_group(
-            active_txn_overrides={"sender": authority},
+            active_txn_overrides={"sender": owner},
         ):
             contract = FryMinerRewardPool()
             contract.create(
                 tfry_id=arc4.UInt64(tfry.id),
                 fnode_id=arc4.UInt64(fnode.id),
                 fee_address=arc4.Address(fee_receiver.bytes),
+                owner=arc4.Address(owner.bytes),
+                admin=arc4.Address(admin.bytes),
                 fee_bps=arc4.UInt64(3000),
                 maturation_epochs=arc4.UInt64(4),
             )
@@ -50,7 +53,9 @@ def setup():
         yield {
             "ctx": ctx,
             "contract": contract,
-            "authority": authority,
+            "owner": owner,
+            "admin": admin,
+            "authority": admin,  # backward compat alias for existing tests
             "user1": user1,
             "user2": user2,
             "fee_receiver": fee_receiver,
@@ -367,13 +372,14 @@ class TestClaim:
         ctx = setup["ctx"]
         contract = setup["contract"]
         authority = setup["authority"]
+        owner = setup["owner"]
         user1 = setup["user1"]
         tfry = setup["tfry"]
         fnode = setup["fnode"]
 
         _publish(ctx, contract, authority, user1, 1000, 0, 0, 0, 0)
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.pause()
 
         with pytest.raises(AssertionError, match="paused"):
@@ -445,61 +451,149 @@ class TestAdminMethods:
     def test_set_fee(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
-        authority = setup["authority"]
+        owner = setup["owner"]
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.set_fee(arc4.UInt64(1500))
         assert contract.fee_bps == 1500
 
     def test_set_fee_rejects_too_high(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
-        authority = setup["authority"]
+        owner = setup["owner"]
 
         with pytest.raises(AssertionError, match="fee too high"):
-            with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+            with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
                 contract.set_fee(arc4.UInt64(6000))
 
-    def test_set_fee_rejects_non_authority(self, setup):
+    def test_set_fee_rejects_non_owner(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
         user1 = setup["user1"]
 
-        with pytest.raises(AssertionError, match="unauthorized"):
+        with pytest.raises(AssertionError, match="owner only"):
             with ctx.txn.create_group(active_txn_overrides={"sender": user1}):
                 contract.set_fee(arc4.UInt64(1500))
 
     def test_set_maturation(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
-        authority = setup["authority"]
+        owner = setup["owner"]
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.set_maturation(arc4.UInt64(8))
         assert contract.maturation_epochs == 8
 
     def test_pause_unpause(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
-        authority = setup["authority"]
+        owner = setup["owner"]
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.pause()
         assert contract.paused == 1
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.unpause()
         assert contract.paused == 0
 
-    def test_set_authority(self, setup):
+    def test_set_admin_owner_can(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
-        authority = setup["authority"]
+        owner = setup["owner"]
         user1 = setup["user1"]
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
-            contract.set_authority(arc4.Address(user1.bytes))
-        assert contract.authority == user1
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
+            contract.set_admin(arc4.Address(user1.bytes))
+        assert contract.admin == user1
+
+    def test_set_admin_admin_cannot(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        admin = setup["admin"]
+        user1 = setup["user1"]
+
+        with pytest.raises(Exception, match="owner only"):
+            with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+                contract.set_admin(arc4.Address(user1.bytes))
+
+    def test_set_admin_random_cannot(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+        user2 = setup["user2"]
+
+        with pytest.raises(Exception, match="owner only"):
+            with ctx.txn.create_group(active_txn_overrides={"sender": user1}):
+                contract.set_admin(arc4.Address(user2.bytes))
+
+
+class TestOwnerAdminTiers:
+    """Test that admin-or-owner vs owner-only auth tiers are enforced."""
+
+    def test_admin_can_publish_rewards(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        admin = setup["admin"]
+        user1 = setup["user1"]
+
+        _publish(ctx, contract, admin, user1, 1000, 500, 600, 300, 0)
+        state = contract.wallets[user1].copy()
+        assert state.entitled_tfry.native == 1000
+
+    def test_owner_can_publish_rewards(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        owner = setup["owner"]
+        user1 = setup["user1"]
+
+        _publish(ctx, contract, owner, user1, 1000, 500, 600, 300, 0)
+        state = contract.wallets[user1].copy()
+        assert state.entitled_tfry.native == 1000
+
+    def test_random_cannot_publish_rewards(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        user1 = setup["user1"]
+        user2 = setup["user2"]
+
+        with pytest.raises(Exception, match="unauthorized"):
+            _publish(ctx, contract, user1, user2, 1000, 500, 600, 300, 0)
+
+    def test_admin_cannot_pause(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        admin = setup["admin"]
+
+        with pytest.raises(Exception, match="owner only"):
+            with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+                contract.pause()
+
+    def test_owner_can_pause(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        owner = setup["owner"]
+
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
+            contract.pause()
+        assert contract.paused == 1
+
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
+            contract.unpause()
+        assert contract.paused == 0
+
+    def test_admin_cannot_withdraw(self, setup):
+        ctx = setup["ctx"]
+        contract = setup["contract"]
+        admin = setup["admin"]
+        tfry = setup["tfry"]
+        user1 = setup["user1"]
+
+        with pytest.raises(Exception, match="owner only"):
+            with ctx.txn.create_group(active_txn_overrides={"sender": admin}):
+                contract.withdraw_excess(
+                    asset=tfry, amount=arc4.UInt64(0), to=user1,
+                )
 
 
 # ── Read-Only Methods ────────────────────────────────────────────────
@@ -621,11 +715,12 @@ class TestFeeMath:
         ctx = setup["ctx"]
         contract = setup["contract"]
         authority = setup["authority"]
+        owner = setup["owner"]
         user1 = setup["user1"]
         tfry = setup["tfry"]
         fnode = setup["fnode"]
 
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.set_fee(arc4.UInt64(0))
 
         _publish(ctx, contract, authority, user1, 1000, 0, 0, 0, 0)
@@ -899,15 +994,15 @@ class TestClaimPreseed:
     def test_claim_preseed_paused_rejected(self, setup):
         ctx = setup["ctx"]
         contract = setup["contract"]
-        authority = setup["authority"]
+        owner = setup["owner"]
         user1 = setup["user1"]
         tfry = setup["tfry"]
         fnode = setup["fnode"]
 
         tree, proof, e_tfry, e_fnode = self._setup_merkle(setup)
 
-        # Pause
-        with ctx.txn.create_group(active_txn_overrides={"sender": authority}):
+        # Pause (owner-only)
+        with ctx.txn.create_group(active_txn_overrides={"sender": owner}):
             contract.pause()
 
         mbr_pay = _make_mbr_pay(ctx, user1, contract)

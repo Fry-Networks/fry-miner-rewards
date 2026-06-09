@@ -41,7 +41,8 @@ class FryMinerRewardPool(ARC4Contract):
     """Miner reward pool with FIFO maturation and dual-asset support."""
 
     def __init__(self) -> None:
-        self.authority = Global.creator_address
+        self.owner = Global.creator_address
+        self.admin = Global.creator_address
         self.tfry_id = UInt64(0)
         self.fnode_id = UInt64(0)
         self.fee_address = Global.creator_address
@@ -64,13 +65,21 @@ class FryMinerRewardPool(ARC4Contract):
         tfry_id: arc4.UInt64,
         fnode_id: arc4.UInt64,
         fee_address: arc4.Address,
+        owner: arc4.Address,
+        admin: arc4.Address,
         fee_bps: arc4.UInt64,
         maturation_epochs: arc4.UInt64,
     ) -> None:
-        """Initialize the reward pool with token IDs and fee config."""
+        """Initialize the reward pool with token IDs, admin config, and fee config.
+
+        owner: ultimate authority — can rotate admin, pause, withdraw.
+        admin: operational key — can publish rewards, fund pool, set root.
+        """
         self.tfry_id = tfry_id.native
         self.fnode_id = fnode_id.native
         self.fee_address = Account(fee_address.bytes)
+        self.owner = Account(owner.bytes)
+        self.admin = Account(admin.bytes)
         self.fee_bps = fee_bps.native
         self.maturation_epochs = maturation_epochs.native
 
@@ -82,7 +91,7 @@ class FryMinerRewardPool(ARC4Contract):
         mbr_pay: gtxn.PaymentTransaction,
     ) -> None:
         """Opt the contract into tFRY and fNODE ASAs. Caller funds MBR."""
-        assert Txn.sender == self.authority, "unauthorized"
+        assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
         assert mbr_pay.receiver == Global.current_application_address, "mbr to app"
         itxn.AssetTransfer(
             xfer_asset=tfry,
@@ -116,7 +125,7 @@ class FryMinerRewardPool(ARC4Contract):
         Creates box on first call (mbr_pay covers MBR).
         Does NOT touch claimed fields — those are user-controlled.
         """
-        assert Txn.sender == self.authority, "unauthorized"
+        assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
         assert entitled_tfry.native >= matured_tfry.native, "entitled >= matured tfry"
         assert entitled_fnode.native >= matured_fnode.native, "entitled >= matured fnode"
         assert epoch.native >= self.current_epoch, "epoch >= current"
@@ -149,7 +158,7 @@ class FryMinerRewardPool(ARC4Contract):
     @arc4.abimethod
     def advance_epoch(self) -> None:
         """Increment current epoch. Called after weekly publish batch."""
-        assert Txn.sender == self.authority, "unauthorized"
+        assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
         self.current_epoch += 1
 
     # ── Admin: Merkle Root ────────────────────────────────────────────
@@ -157,7 +166,7 @@ class FryMinerRewardPool(ARC4Contract):
     @arc4.abimethod
     def set_merkle_root(self, root: arc4.DynamicBytes) -> None:
         """Store the preseed Merkle root (32 bytes)."""
-        assert Txn.sender == self.authority, "unauthorized"
+        assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
         assert root.native.length == 32, "root must be 32 bytes"
         self.merkle_root = root.native
 
@@ -252,52 +261,52 @@ class FryMinerRewardPool(ARC4Contract):
     @arc4.abimethod
     def fund_pool(self, axfer: gtxn.AssetTransferTransaction) -> None:
         """Deposit tFRY or fNODE into the reward pool."""
-        assert Txn.sender == self.authority, "unauthorized"
+        assert Txn.sender == self.admin or Txn.sender == self.owner, "unauthorized"
         assert axfer.asset_receiver == Global.current_application_address, "to app"
         asset_id = axfer.xfer_asset.id
         assert asset_id == self.tfry_id or asset_id == self.fnode_id, "wrong asset"
 
     @arc4.abimethod
     def set_fee(self, fee_bps: arc4.UInt64) -> None:
-        """Adjust fee rate (basis points, max 5000 = 50%)."""
-        assert Txn.sender == self.authority, "unauthorized"
+        """Adjust fee rate (basis points, max 5000 = 50%). Owner-only."""
+        assert Txn.sender == self.owner, "owner only"
         assert fee_bps.native <= 5000, "fee too high"
         self.fee_bps = fee_bps.native
 
     @arc4.abimethod
     def set_fee_address(self, addr: arc4.Address) -> None:
-        """Change fee destination address."""
-        assert Txn.sender == self.authority, "unauthorized"
+        """Change fee destination address. Owner-only."""
+        assert Txn.sender == self.owner, "owner only"
         self.fee_address = Account(addr.bytes)
 
     @arc4.abimethod
     def set_maturation(self, epochs: arc4.UInt64) -> None:
-        """Adjust maturation period (number of epochs before fee-free)."""
-        assert Txn.sender == self.authority, "unauthorized"
+        """Adjust maturation period (number of epochs before fee-free). Owner-only."""
+        assert Txn.sender == self.owner, "owner only"
         self.maturation_epochs = epochs.native
 
     @arc4.abimethod
-    def set_authority(self, new_authority: arc4.Address) -> None:
-        """Transfer authority to a new address."""
-        assert Txn.sender == self.authority, "unauthorized"
-        self.authority = Account(new_authority.bytes)
+    def set_admin(self, new_admin: arc4.Address) -> None:
+        """Rotate admin address. Owner-only — use if admin key is compromised."""
+        assert Txn.sender == self.owner, "owner only"
+        self.admin = Account(new_admin.bytes)
 
     @arc4.abimethod
     def pause(self) -> None:
-        """Emergency pause — blocks all user claims."""
-        assert Txn.sender == self.authority, "unauthorized"
+        """Emergency pause — blocks all user claims. Owner-only."""
+        assert Txn.sender == self.owner, "owner only"
         self.paused = UInt64(1)
 
     @arc4.abimethod
     def unpause(self) -> None:
-        """Resume normal operation."""
-        assert Txn.sender == self.authority, "unauthorized"
+        """Resume normal operation. Owner-only."""
+        assert Txn.sender == self.owner, "owner only"
         self.paused = UInt64(0)
 
     @arc4.abimethod
     def withdraw_excess(self, asset: Asset, amount: arc4.UInt64, to: Account) -> None:
-        """Admin withdraws excess/unused tokens from pool."""
-        assert Txn.sender == self.authority, "unauthorized"
+        """Withdraw excess/unused tokens from pool. Owner-only."""
+        assert Txn.sender == self.owner, "owner only"
         itxn.AssetTransfer(
             xfer_asset=asset,
             asset_receiver=to,
