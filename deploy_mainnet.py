@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Deploy FryMinerRewardPool to Algorand mainnet.
+"""Deploy and manage FryMinerRewardPool on Algorand mainnet.
 
 Signs with rekey mnemonic (authority wallet is rekeyed).
-Handles: compile TEAL, deploy, opt_in_assets, fund_pool.
+Handles: compile TEAL, deploy, opt_in_assets, fund_pool, set_merkle_root,
+         deploy-budget-helper, claim-preseed.
 
 Usage:
     python deploy_mainnet.py --action deploy
-    python deploy_mainnet.py --action opt-in
-    python deploy_mainnet.py --action fund --asset tfry --amount 176000000000000
-    python deploy_mainnet.py --action fund --asset fnode --amount 214000000000000
-    python deploy_mainnet.py --action verify --app-id 12345
+    python deploy_mainnet.py --action opt-in --app-id APP
+    python deploy_mainnet.py --action fund --app-id APP --asset tfry --amount 176000000000000
+    python deploy_mainnet.py --action verify --app-id APP
+    python deploy_mainnet.py --action set-root --app-id APP --merkle-json proofs.json
+    python deploy_mainnet.py --action deploy-budget-helper
+    python deploy_mainnet.py --action claim-preseed --app-id APP --merkle-json proofs.json --wallet ADDR
 """
 
 import argparse
@@ -42,11 +45,20 @@ MATURATION_EPOCHS = 4
 AUTHORITY_ADDR = "HXWYLLZDPTM5OXS3DPARMTG52RSBMMCQNKT4L2LZRRXYPNAWJBT6VIW6WU"
 FEE_ADDR = "AM53XSHRSSSZMNFAMKVAJFXHPMIYYUUBOVCODJ2LQY3D27CVXAHAPIXYXQ"
 
+# Set after deploying via --action deploy-budget-helper.
+# claim_preseed's 12-round SHA256 Merkle proof verification exceeds the 700
+# per-txn opcode budget. A noop app call in the same group pools +700 budget.
+BUDGET_APP_ID = 0
+
 # ABI methods
 METHODS = {
     "create": Method.from_signature("create(uint64,uint64,address,uint64,uint64)void"),
     "opt_in_assets": Method.from_signature("opt_in_assets(uint64,uint64,pay)void"),
     "fund_pool": Method.from_signature("fund_pool(axfer)void"),
+    "set_merkle_root": Method.from_signature("set_merkle_root(byte[])void"),
+    "claim_preseed": Method.from_signature(
+        "claim_preseed(uint64,uint64,byte[],uint64,pay,uint64,uint64)void"
+    ),
     "get_wallet_state": Method.from_signature(
         "get_wallet_state(address)(uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64)"
     ),
@@ -110,7 +122,7 @@ def action_deploy(client, signer_sk, signer, args):
         method_args=[TFRY_ID, FNODE_ID, FEE_ADDR, FEE_BPS, MATURATION_EPOCHS],
         approval_program=approval_bytes,
         clear_program=clear_bytes,
-        global_schema=transaction.StateSchema(num_uints=10, num_byte_slices=2),
+        global_schema=transaction.StateSchema(num_uints=10, num_byte_slices=3),
         local_schema=transaction.StateSchema(num_uints=0, num_byte_slices=0),
         extra_pages=extra_pages,
         on_complete=transaction.OnComplete.NoOpOC,
@@ -244,23 +256,19 @@ def action_set_root(client, signer_sk, signer, args):
     print(f"  Root: {root_hex}")
     print(f"  Wallets: {wallet_count}")
 
-    # ABI encode: DynamicBytes = uint16 length prefix + raw bytes
-    encoded_root = len(root_bytes).to_bytes(2, "big") + root_bytes
-
+    # Pass raw bytes — algosdk ATC auto-encodes byte[] with length prefix.
     sp = client.suggested_params()
     sp.flat_fee = True
     sp.fee = 2000
 
-    method = Method.from_signature("set_merkle_root(byte[])void")
-
     atc = AtomicTransactionComposer()
     atc.add_method_call(
         app_id=args.app_id,
-        method=method,
+        method=METHODS["set_merkle_root"],
         sender=AUTHORITY_ADDR,
         sp=sp,
         signer=signer,
-        method_args=[encoded_root],
+        method_args=[root_bytes],
     )
 
     result = atc.execute(client, 4)
@@ -307,13 +315,146 @@ def action_preflight(client, args):
         sys.exit(1)
 
 
+# ── Budget Helper & Claim ────────────────────────────────────────────
+
+
+def action_deploy_budget_helper(client, signer_sk, signer, args):
+    """Deploy a trivial noop app for opcode budget padding.
+
+    claim_preseed's 12-round SHA256 Merkle proof verification costs ~750
+    opcodes, exceeding the 700 per-txn budget. Including a noop app call
+    in the same atomic group pools an extra 700 budget (total 1400).
+    Deploy this once on mainnet, then set BUDGET_APP_ID in this file.
+    """
+    print("\n=== DEPLOY BUDGET HELPER ===")
+    approval = client.compile("#pragma version 10\nint 1")
+    clear = client.compile("#pragma version 10\nint 1")
+    approval_bytes = base64.b64decode(approval["result"])
+    clear_bytes = base64.b64decode(clear["result"])
+
+    sp = client.suggested_params()
+    txn = transaction.ApplicationCreateTxn(
+        sender=AUTHORITY_ADDR,
+        sp=sp,
+        on_complete=transaction.OnComplete.NoOpOC,
+        approval_program=approval_bytes,
+        clear_program=clear_bytes,
+        global_schema=transaction.StateSchema(0, 0),
+        local_schema=transaction.StateSchema(0, 0),
+    )
+    stxn = txn.sign(signer_sk)
+    txid = client.send_transaction(stxn)
+    info = transaction.wait_for_confirmation(client, txid, 4)
+    budget_app_id = info["application-index"]
+
+    print(f"  App ID:  {budget_app_id}")
+    print(f"  Txn ID:  {txid}")
+    print(f"\n  Next: update BUDGET_APP_ID = {budget_app_id} in deploy_mainnet.py")
+    return budget_app_id
+
+
+def action_claim_preseed(client, signer_sk, signer, args):
+    """Claim preseed rewards for a wallet using Merkle proof.
+
+    Reads proof data from --merkle-json, claims for --wallet.
+    Includes a budget-padding noop app call (claim_preseed's 12-round
+    SHA256 loop exceeds 700 opcode budget without it).
+    """
+    print("\n=== CLAIM PRESEED ===")
+    if not args.merkle_json:
+        print("ERROR: --merkle-json required")
+        sys.exit(1)
+    if not args.wallet:
+        print("ERROR: --wallet required")
+        sys.exit(1)
+
+    budget_app_id = args.budget_app_id or BUDGET_APP_ID
+    if budget_app_id == 0:
+        print("ERROR: --budget-app-id required (or set BUDGET_APP_ID constant)")
+        sys.exit(1)
+
+    with open(args.merkle_json) as f:
+        data = json.load(f)
+
+    wallet_addr = args.wallet
+    wallet_data = data.get("wallets", {}).get(wallet_addr)
+    if not wallet_data:
+        print(f"ERROR: wallet {wallet_addr} not found in Merkle JSON")
+        sys.exit(1)
+
+    e_tfry = wallet_data["entitled_tfry"]
+    e_fnode = wallet_data["entitled_fnode"]
+    leaf_index = wallet_data["leaf_index"]
+    proof_bytes = bytes.fromhex(wallet_data["proof"])
+    assert len(proof_bytes) == 384, f"proof must be 384 bytes, got {len(proof_bytes)}"
+
+    app_addr = app_address(args.app_id)
+    wallet_bytes = encoding.decode_address(wallet_addr)
+
+    print(f"  Wallet:     {wallet_addr}")
+    print(f"  tFRY:       {e_tfry / 1_000_000:,.2f}")
+    print(f"  fNODE:      {e_fnode / 1_000_000:,.2f}")
+    print(f"  Leaf index: {leaf_index}")
+    print(f"  Budget app: {budget_app_id}")
+
+    # Budget-padding noop call (pools +700 opcode budget)
+    sp_noop = client.suggested_params()
+    sp_noop.flat_fee = True
+    sp_noop.fee = 1000
+    noop_txn = transaction.ApplicationCallTxn(
+        sender=AUTHORITY_ADDR,
+        sp=sp_noop,
+        index=budget_app_id,
+        on_complete=transaction.OnComplete.NoOpOC,
+    )
+
+    # MBR payment for box creation
+    mbr_pay = transaction.PaymentTxn(
+        sender=AUTHORITY_ADDR,
+        sp=client.suggested_params(),
+        receiver=app_addr,
+        amt=100_000,
+    )
+
+    # claim_preseed app call (fee covers 2 inner asset transfers)
+    sp = client.suggested_params()
+    sp.flat_fee = True
+    sp.fee = 3000
+
+    atc = AtomicTransactionComposer()
+    atc.add_transaction(TransactionWithSigner(noop_txn, signer))
+    atc.add_method_call(
+        app_id=args.app_id,
+        method=METHODS["claim_preseed"],
+        sender=AUTHORITY_ADDR,
+        sp=sp,
+        signer=signer,
+        method_args=[
+            e_tfry,
+            e_fnode,
+            proof_bytes,
+            leaf_index,
+            TransactionWithSigner(mbr_pay, signer),
+            TFRY_ID,
+            FNODE_ID,
+        ],
+        foreign_assets=[TFRY_ID, FNODE_ID],
+        boxes=[(args.app_id, b"w" + wallet_bytes)],
+    )
+
+    result = atc.execute(client, 4)
+    print(f"  Claimed. Txn: {result.tx_ids[0]}")
+
+
 # ── Main ──────────────────────────────────────────────────────────────
 
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy FryMinerRewardPool to mainnet")
-    parser.add_argument("--action", required=True,
-                        choices=["deploy", "opt-in", "fund", "verify", "preflight", "set-root"])
+    parser.add_argument("--action", required=True, choices=[
+        "deploy", "opt-in", "fund", "verify", "preflight",
+        "set-root", "deploy-budget-helper", "claim-preseed",
+    ])
     parser.add_argument("--app-id", type=int, default=0)
     parser.add_argument("--algod-url", default="http://100.69.195.100:4190")
     parser.add_argument("--algod-token", default="")
@@ -322,7 +463,9 @@ def main():
     parser.add_argument("--amount", type=int, default=0, help="Amount in microunits for fund action")
     parser.add_argument("--required-tfry", type=int, default=0, help="Required tFRY for preflight")
     parser.add_argument("--required-fnode", type=int, default=0, help="Required fNODE for preflight")
-    parser.add_argument("--merkle-json", default="", help="Path to Merkle proofs JSON (for set-root)")
+    parser.add_argument("--merkle-json", default="", help="Path to Merkle proofs JSON")
+    parser.add_argument("--wallet", default="", help="Wallet address (for claim-preseed)")
+    parser.add_argument("--budget-app-id", type=int, default=0, help="Budget helper app ID")
     args = parser.parse_args()
 
     client = get_client(args)
@@ -360,6 +503,15 @@ def main():
             print("ERROR: --app-id, --asset, --amount required")
             sys.exit(1)
         action_fund(client, signer_sk, signer, args)
+
+    elif args.action == "deploy-budget-helper":
+        action_deploy_budget_helper(client, signer_sk, signer, args)
+
+    elif args.action == "claim-preseed":
+        if args.app_id == 0:
+            print("ERROR: --app-id required")
+            sys.exit(1)
+        action_claim_preseed(client, signer_sk, signer, args)
 
 
 if __name__ == "__main__":
