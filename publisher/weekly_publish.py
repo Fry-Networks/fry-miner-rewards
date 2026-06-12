@@ -163,7 +163,163 @@ def query_weekly_rewards(db_main, days: int = 7) -> tuple[dict[str, dict[str, in
         tfry = to_micro(r.get("tfry", 0))
         fnode = to_micro(r.get("fnode", 0))
         if tfry > 0 or fnode > 0:
-            wallet_totals[wallet] = {"tfry": tfry, "fnode": fnode}
+            wallet_totals[wallet] = {
+                "tfry": tfry,
+                "fnode": fnode,
+                "device_count": r.get("device_count", 0),
+            }
+
+    return wallet_totals, devices_without_wallet
+
+
+def get_distinct_unlock_at_in_range(db_main, start_dt, end_dt) -> list[str]:
+    """Return distinct unlock_at dates (YYYY-MM-DD) within a range, newest first."""
+    pipeline = [
+        {"$unwind": "$weekly_rewards"},
+        {"$match": {"weekly_rewards.unlock_at": {"$gte": start_dt, "$lte": end_dt}}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$weekly_rewards.unlock_at"}}}},
+        {"$sort": {"_id": -1}},
+    ]
+    try:
+        results = list(db_main["device-rewards"].aggregate(pipeline, allowDiskUse=True))
+        return [r["_id"] for r in results]
+    except Exception as e:
+        log.warning("get_distinct_unlock_at_in_range failed: %s", e)
+        return []
+
+
+def query_last_windows(db_main, n: int = 3) -> list[dict]:
+    """Query last N distinct unlock_at windows with device counts and totals."""
+    pipeline = [
+        {"$unwind": "$weekly_rewards"},
+        {
+            "$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$weekly_rewards.unlock_at"}},
+                "devices": {"$sum": 1},
+                "tfry": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": [{"$toString": "$weekly_rewards.asset_id"}, str(TFRY_ID)]},
+                            {"$toDouble": "$weekly_rewards.amount"},
+                            0,
+                        ]
+                    }
+                },
+                "fnode": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": [{"$toString": "$weekly_rewards.asset_id"}, str(FNODE_ID)]},
+                            {"$toDouble": "$weekly_rewards.amount"},
+                            0,
+                        ]
+                    }
+                },
+            }
+        },
+        {"$sort": {"_id": -1}},
+        {"$limit": n},
+    ]
+    try:
+        results = list(db_main["device-rewards"].aggregate(pipeline, allowDiskUse=True))
+        return [
+            {
+                "window": r["_id"],
+                "devices": r.get("devices", 0),
+                "tfry": r.get("tfry", 0.0),
+                "fnode": r.get("fnode", 0.0),
+            }
+            for r in results
+        ]
+    except Exception as e:
+        log.warning("query_last_windows failed: %s", e)
+        return []
+
+
+def query_weekly_rewards_for_window(db_main, window_date_str: str) -> tuple[dict[str, dict[str, int]], int]:
+    """Query device-rewards for a single unlock_at date (YYYY-MM-DD)."""
+    from datetime import datetime
+    year, month, day = map(int, window_date_str.split("-"))
+    start_dt = datetime(year, month, day, 0, 0, 0, tzinfo=timezone.utc)
+    end_dt = datetime(year, month, day, 23, 59, 59, tzinfo=timezone.utc)
+
+    pipeline = [
+        {"$unwind": "$weekly_rewards"},
+        {
+            "$match": {
+                "weekly_rewards.unlock_at": {
+                    "$gte": start_dt,
+                    "$lte": end_dt,
+                }
+            }
+        },
+        {
+            "$lookup": {
+                "from": "devices",
+                "localField": "miner_key",
+                "foreignField": "miner_key",
+                "as": "device",
+            }
+        },
+        {
+            "$project": {
+                "miner_key": 1,
+                "wallet": {
+                    "$ifNull": [
+                        {"$arrayElemAt": ["$device.reward_wallet", 0]},
+                        {"$arrayElemAt": ["$device.address", 0]},
+                    ]
+                },
+                "amount": {"$toDouble": "$weekly_rewards.amount"},
+                "asset_id": {"$toString": "$weekly_rewards.asset_id"},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$wallet",
+                "tfry": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$asset_id", str(TFRY_ID)]},
+                            "$amount",
+                            0,
+                        ]
+                    }
+                },
+                "fnode": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$asset_id", str(FNODE_ID)]},
+                            "$amount",
+                            0,
+                        ]
+                    }
+                },
+                "device_count": {"$sum": 1},
+            }
+        },
+    ]
+
+    try:
+        results = list(db_main["device-rewards"].aggregate(pipeline, allowDiskUse=True))
+    except Exception as e:
+        log.error("Mongo single-window aggregation failed: %s", e)
+        return {}, 0
+
+    wallet_totals = {}
+    devices_without_wallet = 0
+    for r in results:
+        wallet = r["_id"]
+        if not wallet:
+            devices_without_wallet += r.get("device_count", 0)
+            continue
+        tfry = to_micro(r.get("tfry", 0))
+        fnode = to_micro(r.get("fnode", 0))
+        if tfry > 0 or fnode > 0:
+            wallet_totals[wallet] = {
+                "tfry": tfry,
+                "fnode": fnode,
+                "device_count": r.get("device_count", 0),
+            }
 
     return wallet_totals, devices_without_wallet
 
@@ -322,6 +478,7 @@ def compute_publish_records(
             "entitled_fnode": new_entitled_fnode,
             "matured_tfry": matured_tfry,
             "matured_fnode": matured_fnode,
+            "device_count": weekly[wallet].get("device_count", 0),
             "epoch": epoch,
         }
 
@@ -384,7 +541,11 @@ def compute_weekly_from_records(
         delta_tfry = rec["entitled_tfry"] - prev_tfry
         delta_fnode = rec["entitled_fnode"] - prev_fnode
         if delta_tfry > 0 or delta_fnode > 0:
-            weekly[wallet] = {"tfry": delta_tfry, "fnode": delta_fnode}
+            weekly[wallet] = {
+                "tfry": delta_tfry,
+                "fnode": delta_fnode,
+                "device_count": rec.get("device_count", 0),
+            }
     return weekly
 
 
@@ -477,6 +638,10 @@ def check_caps(
             "mean_weekly": mean_weekly,
             "max_weekly": max_weekly,
             "threshold": mean_weekly * 10,
+            "mean_weekly_dec": mean_weekly / MICROUNITS,
+            "max_weekly_dec": max_weekly / MICROUNITS,
+            "threshold_dec": (mean_weekly * 10) / MICROUNITS,
+            "W": len(weekly),
             "pass": max_weekly <= mean_weekly * 10,
         }
         if not report["details"]["cap_d"]["pass"]:
@@ -505,7 +670,6 @@ def check_caps(
                     print(f"  {k}: {v}")
         print(f"\nInvariant: max({P}, {W}) = {count_min} <= {published_count} <= {P + W} = {count_max}")
         print("===========================================")
-        sys.exit(1)
 
     return report
 
@@ -590,13 +754,14 @@ def build_atomic_groups(
 def simulate_groups(
     client: algod.AlgodClient,
     groups: list[list[transaction.Transaction]],
-) -> bool:
-    """Simulate each group. Return True if all pass."""
+) -> tuple[bool, int, int]:
+    """Simulate each group. Return (all_pass, passed_count, failed_count)."""
     if not groups:
         log.info("No groups to simulate")
-        return True
+        return True, 0, 0
 
-    all_pass = True
+    passed = 0
+    failed = 0
     for i, group in enumerate(groups):
         try:
             stxns = []
@@ -612,15 +777,16 @@ def simulate_groups(
             if "failure-message" in group_result:
                 log.error("Group %d simulate FAILED: %s", i, group_result["failure-message"])
                 print(f"\nSimulate group {i} FAILED: {group_result['failure-message']}")
-                all_pass = False
+                failed += 1
             else:
                 log.info("Group %d simulate OK", i)
+                passed += 1
         except Exception as e:
             log.error("Group %d simulate exception: %s", i, e)
             print(f"\nSimulate group {i} exception: {e}")
-            all_pass = False
+            failed += 1
 
-    return all_pass
+    return failed == 0, passed, failed
 
 
 # ── Live submit ──────────────────────────────────────────────────────────
@@ -742,6 +908,13 @@ def print_dry_run_summary(
     client: algod.AlgodClient,
     cap_report: dict,
     epoch: int,
+    start_dt: datetime | None = None,
+    end_dt: datetime | None = None,
+    db_main=None,
+    sim_all_pass: bool = True,
+    sim_passed: int = 0,
+    sim_failed: int = 0,
+    side_by_side: dict | None = None,
 ) -> None:
     print(f"\n============ DRY RUN SUMMARY (Epoch {epoch}) ============")
     print(f"Total wallets to publish: {len(records)}")
@@ -759,6 +932,22 @@ def print_dry_run_summary(
     weekly_fnode = sum(a["fnode"] for a in weekly.values())
     print(f"Weekly new tFRY: {weekly_tfry / MICROUNITS:,.2f}")
     print(f"Weekly new fNODE: {weekly_fnode / MICROUNITS:,.2f}")
+
+    # Window info
+    if start_dt and end_dt:
+        print(f"\n--- WINDOW ---")
+        print(f"Range: {start_dt.isoformat()} to {end_dt.isoformat()}")
+        print(f"Note: mean over weekly-earning wallets W = {len(weekly)}, not all published wallets")
+
+    # Recent windows table
+    if db_main is not None:
+        recent = query_last_windows(db_main, n=3)
+        if recent:
+            print(f"\n--- RECENT WINDOWS ---")
+            print(f"{'Window':<12} {'Devices':>10} {'tFRY':>14} {'fNODE':>14}")
+            print("-" * 54)
+            for w in recent:
+                print(f"{w['window']:<12} {w['devices']:>10,} {w['tfry']:>14,.2f} {w['fnode']:>14,.2f}")
 
     # ALGO required
     new_boxes = len(records) - len(existing)
@@ -781,10 +970,90 @@ def print_dry_run_summary(
     else:
         print("Sufficient ALGO for MBR payments.")
 
+    # Cap d details
+    cap_d = cap_report.get("details", {}).get("cap_d", {})
+    if "mean_weekly_dec" in cap_d:
+        print(f"\n--- CAP D DETAILS ---")
+        print(f"Mean weekly per wallet: {cap_d['mean_weekly_dec']:,.2f}")
+        print(f"Max weekly per wallet:  {cap_d['max_weekly_dec']:,.2f}")
+        print(f"Threshold (10x mean):   {cap_d['threshold_dec']:,.2f}")
+        print(f"Wallets in weekly:      {cap_d.get('W', 0)}")
+
+    # Top-5 wallets
+    if weekly:
+        sorted_weekly = sorted(weekly.items(), key=lambda x: x[1]["tfry"] + x[1]["fnode"], reverse=True)[:5]
+        print(f"\n--- TOP 5 WEEKLY WALLETS ---")
+        print(f"{'Wallet':>44} {'tFRY':>14} {'fNODE':>14} {'Devices':>8}")
+        print("-" * 84)
+        for wallet, amounts in sorted_weekly:
+            print(f"{wallet:>44} {amounts['tfry']/MICROUNITS:>14,.2f} {amounts['fnode']/MICROUNITS:>14,.2f} {amounts.get('device_count', 0):>8}")
+
+    # Pool top-up
+    cap_b = cap_report.get("details", {}).get("cap_b", {})
+    if cap_b:
+        print(f"\n--- POOL TOP-UP REQUIRED ---")
+        print(f"{'Token':<10} {'Unclaimed':>18} {'Pool Balance':>18} {'Shortfall':>18}")
+        print("-" * 66)
+        unclaimed_tfry = cap_b.get("unclaimed_tfry", 0)
+        unclaimed_fnode = cap_b.get("unclaimed_fnode", 0)
+        pool_tfry = cap_b.get("pool_tfry", 0)
+        pool_fnode = cap_b.get("pool_fnode", 0)
+        short_tfry = max(0, unclaimed_tfry - pool_tfry)
+        short_fnode = max(0, unclaimed_fnode - pool_fnode)
+        print(f"{'tFRY':<10} {unclaimed_tfry/MICROUNITS:>18,.2f} {pool_tfry/MICROUNITS:>18,.2f} {short_tfry/MICROUNITS:>18,.2f}")
+        print(f"{'fNODE':<10} {unclaimed_fnode/MICROUNITS:>18,.2f} {pool_fnode/MICROUNITS:>18,.2f} {short_fnode/MICROUNITS:>18,.2f}")
+        print("Note: Pool currently holds exactly preseed obligation. Every weekly epoch requires a top-up or periodic pre-fund.")
+
+    # Side-by-side comparison
+    if side_by_side:
+        print(f"\n--- SIDE-BY-SIDE: RANGE vs SINGLE WINDOW ({side_by_side['window']}) ---")
+        sb_records = side_by_side["records"]
+        sb_weekly = side_by_side["weekly"]
+        sb_cap = side_by_side["cap_report"]
+
+        print(f"{'Metric':<30} {'Range-based':>18} {'Single-window':>18}")
+        print("-" * 68)
+        print(f"{'Wallets':<30} {len(records):>18,} {len(sb_records):>18,}")
+
+        range_tfry = sum(r["entitled_tfry"] for r in records)
+        range_fnode = sum(r["entitled_fnode"] for r in records)
+        sb_tfry = sum(r["entitled_tfry"] for r in sb_records)
+        sb_fnode = sum(r["entitled_fnode"] for r in sb_records)
+        print(f"{'Total entitled tFRY':<30} {range_tfry/MICROUNITS:>18,.2f} {sb_tfry/MICROUNITS:>18,.2f}")
+        print(f"{'Total entitled fNODE':<30} {range_fnode/MICROUNITS:>18,.2f} {sb_fnode/MICROUNITS:>18,.2f}")
+
+        range_w_tfry = sum(a["tfry"] for a in weekly.values())
+        range_w_fnode = sum(a["fnode"] for a in weekly.values())
+        sb_w_tfry = sum(a["tfry"] for a in sb_weekly.values())
+        sb_w_fnode = sum(a["fnode"] for a in sb_weekly.values())
+        print(f"{'Weekly new tFRY':<30} {range_w_tfry/MICROUNITS:>18,.2f} {sb_w_tfry/MICROUNITS:>18,.2f}")
+        print(f"{'Weekly new fNODE':<30} {range_w_fnode/MICROUNITS:>18,.2f} {sb_w_fnode/MICROUNITS:>18,.2f}")
+
+        range_cap_a = cap_report.get("details", {}).get("cap_a", {})
+        sb_cap_a = sb_cap.get("details", {}).get("cap_a", {})
+        range_cap_d = cap_report.get("details", {}).get("cap_d", {})
+        sb_cap_d = sb_cap.get("details", {}).get("cap_d", {})
+
+        a_pass_range = "PASS" if range_cap_a.get("pass_tfry") and range_cap_a.get("pass_fnode") else "FAIL"
+        a_pass_sb = "PASS" if sb_cap_a.get("pass_tfry") and sb_cap_a.get("pass_fnode") else "FAIL"
+        print(f"{'Cap a (weekly totals)':<30} {a_pass_range:>18} {a_pass_sb:>18}")
+
+        if "threshold_dec" in range_cap_d and "threshold_dec" in sb_cap_d:
+            d_pass_range = "PASS" if range_cap_d.get("pass") else "FAIL"
+            d_pass_sb = "PASS" if sb_cap_d.get("pass") else "FAIL"
+            print(f"{'Cap d (max vs mean)':<30} {d_pass_range:>18} {d_pass_sb:>18}")
+
     print(f"\n--- CAPS ---")
     for cap_name, cap_data in cap_report.get("details", {}).items():
         status = "PASS" if cap_data.get("pass") else "FAIL"
         print(f"  {cap_name}: {status}")
+
+    # Simulate summary
+    if sim_failed > 0 or sim_passed > 0:
+        print(f"\n--- SIMULATE ---")
+        print(f"Simulate: {sim_passed} groups passed / {sim_failed} groups failed")
+        if not sim_all_pass:
+            print("LIVE SUBMIT BLOCKED: simulate failures present")
 
     print(f"\n--- GROUPS ---")
     num_groups = math.ceil(len(records) / WALLETS_PER_GROUP)
@@ -827,6 +1096,9 @@ def publish_epoch(
             log.warning("Mongo connection failed: %s", e)
             db_main = None
 
+    start_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    end_dt = datetime.now(timezone.utc)
+
     # Build/merge publish records
     if publish_records is None:
         if db_main is None:
@@ -856,23 +1128,63 @@ def publish_epoch(
     # Caps
     cap_report = check_caps(publish_records, weekly, preseed, client, app_id)
 
+    if not dry_run and not cap_report["pass"]:
+        print("\nCap breach in live mode. Aborting.")
+        sys.exit(1)
+
     # Query existing boxes
     existing = get_existing_wallets(client, app_id)
 
     # Build groups
     groups = build_atomic_groups(publish_records, existing, app_id, ADMIN_ADDR, client)
 
+    sim_all_pass = True
+    sim_passed = 0
+    sim_failed = 0
+
     if dry_run:
         if client and groups:
-            sim_ok = simulate_groups(client, groups)
-            if not sim_ok:
-                print("\nDry-run aborted due to simulate failure.")
-                sys.exit(1)
+            sim_all_pass, sim_passed, sim_failed = simulate_groups(client, groups)
+            if not sim_all_pass:
+                print(f"\nSimulate: {sim_passed} groups passed / {sim_failed} groups failed")
         else:
             log.info("Skipping simulate (no algod client or no groups)")
 
+    # Window detection for side-by-side
+    side_by_side = None
+    if db_main is not None:
+        distinct = get_distinct_unlock_at_in_range(db_main, start_dt, end_dt)
+        if len(distinct) > 1:
+            latest_window = distinct[0]
+            weekly_single, _ = query_weekly_rewards_for_window(db_main, latest_window)
+            records_single = compute_publish_records(
+                weekly_single, preseed, epoch, db_main, maturation_epochs
+            )
+            weekly_single_delta = compute_weekly_from_records(records_single, epoch, db_main)
+            cap_report_single = check_caps(records_single, weekly_single_delta, preseed, client, app_id)
+            side_by_side = {
+                "window": latest_window,
+                "records": records_single,
+                "weekly": weekly_single_delta,
+                "cap_report": cap_report_single,
+            }
+
+    if dry_run:
         print_dry_run_summary(
-            publish_records, weekly, preseed, existing, client, cap_report, epoch
+            publish_records,
+            weekly,
+            preseed,
+            existing,
+            client,
+            cap_report,
+            epoch,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            db_main=db_main,
+            sim_all_pass=sim_all_pass,
+            sim_passed=sim_passed,
+            sim_failed=sim_failed,
+            side_by_side=side_by_side,
         )
 
         if mongo_client:
