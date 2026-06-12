@@ -33,6 +33,8 @@ from .config import (
     VIRTUAL_NODE_CODES,
 )
 
+import publisher.weekly_publish
+
 log = logging.getLogger(__name__)
 
 
@@ -437,8 +439,17 @@ def main() -> None:
             log.error("--app-id required for live publish")
             sys.exit(1)
         log.info("Publishing to contract app_id=%d ...", args.app_id)
-        # TODO: Phase 3 — implement algod batch publishing
-        log.warning("Contract publishing not yet implemented. Use --dry-run for now.")
+        publisher.weekly_publish.publish_epoch(
+            publish_records=publish_records,
+            epoch=args.epoch,
+            dry_run=False,
+            mongo_uri=args.mongo_uri,
+            algod_url=args.algod_url,
+            app_id=args.app_id,
+            db_main=db_main,
+            write_history=False,
+            maturation_epochs=args.maturation_epochs,
+        )
     else:
         # Print summary
         total_tfry_new = sum(r["entitled_tfry"] for r in publish_records) - sum(
