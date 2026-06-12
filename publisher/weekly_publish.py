@@ -840,24 +840,14 @@ def simulate_groups(
     except Exception as e:
         log.warning("Could not query auth-addr for admin: %s", e)
 
-    # Get current round to ensure unique txids per simulation run
-    try:
-        status = client.status()
-        current_round = status.get("last-round", 0)
-    except Exception as e:
-        log.warning("Could not query status for simulate: %s", e)
-        current_round = 0
-
     passed = 0
     failed = 0
     for i, group in enumerate(groups):
         try:
-            # Bump round range per group to avoid duplicate txids from prior runs
-            if current_round:
-                for txn in group:
-                    txn.first_valid_round = current_round + i + 1
-                    txn.last_valid_round = current_round + i + 1 + 1000
-                transaction.assign_group_id(group)
+            # Mutate note per group to ensure unique txids without touching validity windows
+            for txn in group:
+                txn.note = f"sim-{i}".encode()
+            transaction.assign_group_id(group)
 
             stxns = []
             for txn in group:
