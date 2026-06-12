@@ -48,8 +48,6 @@ PUBLISH_METHOD_SIG = "publish_rewards(address,uint64,uint64,uint64,uint64,uint64
 ADVANCE_METHOD_SIG = "advance_epoch()void"
 
 # Caps (as decimal token amounts)
-CAP_WEEKLY_TFRY_DEC = 1_321_514.64
-CAP_WEEKLY_FNODE_DEC = 3_011_546.67
 CAP_POOL_TFRY_DEC = 175_802_904.22
 CAP_POOL_FNODE_DEC = 213_762_677.82
 
@@ -181,8 +179,26 @@ def get_distinct_unlock_at_in_range(db_main, start_dt, end_dt) -> list[str]:
     """Return distinct unlock_at dates (YYYY-MM-DD) within a range, newest first."""
     pipeline = [
         {"$unwind": "$weekly_rewards"},
-        {"$match": {"weekly_rewards.unlock_at": {"$gte": start_dt, "$lte": end_dt}}},
-        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": {"$toDate": "$weekly_rewards.unlock_at"}}}}},
+        {
+            "$match": {
+                "$expr": {
+                    "$and": [
+                        {"$gte": [{"$toDate": "$weekly_rewards.unlock_at"}, start_dt]},
+                        {"$lte": [{"$toDate": "$weekly_rewards.unlock_at"}, end_dt]},
+                    ]
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": {"$toDate": "$weekly_rewards.unlock_at"},
+                    }
+                }
+            }
+        },
         {"$sort": {"_id": -1}},
     ]
     try:
@@ -568,6 +584,7 @@ def check_caps(
     preseed: dict[str, dict[str, int]],
     client: algod.AlgodClient,
     app_id: int,
+    db_main=None,
 ) -> dict[str, Any]:
     """Apply safety caps. Returns report dict. Exits on breach."""
     report: dict[str, Any] = {"pass": True, "details": {}}
@@ -576,20 +593,40 @@ def check_caps(
     W = len(weekly)
     published_count = len(records)
 
-    # Cap (a) weekly totals
+    # Cap (a) weekly totals — dynamic trailing-3-window baseline
     weekly_tfry = sum(a["tfry"] for a in weekly.values())
     weekly_fnode = sum(a["fnode"] for a in weekly.values())
 
-    report["details"]["cap_a"] = {
-        "weekly_tfry": weekly_tfry,
-        "weekly_fnode": weekly_fnode,
-        "cap_tfry": to_micro(CAP_WEEKLY_TFRY_DEC),
-        "cap_fnode": to_micro(CAP_WEEKLY_FNODE_DEC),
-        "pass_tfry": weekly_tfry <= to_micro(CAP_WEEKLY_TFRY_DEC),
-        "pass_fnode": weekly_fnode <= to_micro(CAP_WEEKLY_FNODE_DEC),
-    }
-    if not report["details"]["cap_a"]["pass_tfry"] or not report["details"]["cap_a"]["pass_fnode"]:
-        report["pass"] = False
+    windows = query_last_windows(db_main, n=3) if db_main else []
+    if len(windows) >= 3:
+        mean_tfry_dec = sum(w["tfry"] for w in windows) / len(windows)
+        mean_fnode_dec = sum(w["fnode"] for w in windows) / len(windows)
+        threshold_tfry_dec = mean_tfry_dec * 3
+        threshold_fnode_dec = mean_fnode_dec * 3
+        pass_tfry = weekly_tfry / MICROUNITS <= threshold_tfry_dec
+        pass_fnode = weekly_fnode / MICROUNITS <= threshold_fnode_dec
+        report["details"]["cap_a"] = {
+            "weekly_tfry": weekly_tfry,
+            "weekly_fnode": weekly_fnode,
+            "windows": [w["window"] for w in windows],
+            "mean_tfry_dec": mean_tfry_dec,
+            "mean_fnode_dec": mean_fnode_dec,
+            "threshold_tfry_dec": threshold_tfry_dec,
+            "threshold_fnode_dec": threshold_fnode_dec,
+            "pass_tfry": pass_tfry,
+            "pass_fnode": pass_fnode,
+        }
+        if not pass_tfry or not pass_fnode:
+            report["pass"] = False
+    else:
+        report["details"]["cap_a"] = {
+            "weekly_tfry": weekly_tfry,
+            "weekly_fnode": weekly_fnode,
+            "windows": [w["window"] for w in windows],
+            "note": f"insufficient history ({len(windows)} windows)",
+            "pass_tfry": True,
+            "pass_fnode": True,
+        }
 
     # Cap (b) total entitled - already_claimed <= pool balances
     total_entitled_tfry = sum(r["entitled_tfry"] for r in records)
@@ -639,20 +676,45 @@ def check_caps(
     if not report["details"]["cap_c"]["pass"]:
         report["pass"] = False
 
-    # Cap (d) per-wallet weekly amount <= 10x mean weekly amount
+    # Cap (d) per-device threshold: 10x mean_per_device x device_count
     if weekly:
         amounts = [a["tfry"] + a["fnode"] for a in weekly.values()]
-        mean_weekly = sum(amounts) / len(amounts)
+        total_devices = sum(a["device_count"] for a in weekly.values())
+        mean_per_device = sum(amounts) / total_devices if total_devices else 0
         max_weekly = max(amounts)
+
+        flagged = []
+        old_flagged = []
+        old_mean = sum(amounts) / len(amounts)
+        old_threshold = old_mean * 10
+        for wallet, data in weekly.items():
+            wallet_total = data["tfry"] + data["fnode"]
+            threshold = 10 * mean_per_device * data["device_count"]
+            if wallet_total > threshold:
+                flagged.append({
+                    "wallet": wallet,
+                    "amount": wallet_total,
+                    "threshold": threshold,
+                    "device_count": data["device_count"],
+                })
+            if wallet_total > old_threshold:
+                old_flagged.append({
+                    "wallet": wallet,
+                    "amount": wallet_total,
+                    "threshold": old_threshold,
+                    "device_count": data["device_count"],
+                })
+
         report["details"]["cap_d"] = {
-            "mean_weekly": mean_weekly,
-            "max_weekly": max_weekly,
-            "threshold": mean_weekly * 10,
-            "mean_weekly_dec": mean_weekly / MICROUNITS,
-            "max_weekly_dec": max_weekly / MICROUNITS,
-            "threshold_dec": (mean_weekly * 10) / MICROUNITS,
+            "mean_per_device": mean_per_device,
+            "mean_per_device_dec": mean_per_device / MICROUNITS,
+            "total_devices": total_devices,
             "W": len(weekly),
-            "pass": max_weekly <= mean_weekly * 10,
+            "max_weekly": max_weekly,
+            "max_weekly_dec": max_weekly / MICROUNITS,
+            "flagged": flagged,
+            "old_flagged": old_flagged,
+            "pass": len(flagged) == 0,
         }
         if not report["details"]["cap_d"]["pass"]:
             report["pass"] = False
@@ -770,19 +832,34 @@ def simulate_groups(
         log.info("No groups to simulate")
         return True, 0, 0
 
+    # Get auth address once for rekeyed admin
+    auth_addr = ADMIN_ADDR
+    try:
+        acct_info = client.account_info(ADMIN_ADDR)
+        auth_addr = acct_info.get("auth-addr", ADMIN_ADDR)
+    except Exception as e:
+        log.warning("Could not query auth-addr for admin: %s", e)
+
+    # Get current round to ensure unique txids per simulation run
+    try:
+        status = client.status()
+        current_round = status.get("last-round", 0)
+    except Exception as e:
+        log.warning("Could not query status for simulate: %s", e)
+        current_round = 0
+
     passed = 0
     failed = 0
     for i, group in enumerate(groups):
         try:
-            stxns = []
-            # Get auth address once for rekeyed admin
-            auth_addr = ADMIN_ADDR
-            try:
-                acct_info = client.account_info(ADMIN_ADDR)
-                auth_addr = acct_info.get("auth-addr", ADMIN_ADDR)
-            except Exception as e:
-                log.warning("Could not query auth-addr for admin: %s", e)
+            # Bump round range per group to avoid duplicate txids from prior runs
+            if current_round:
+                for txn in group:
+                    txn.first_valid_round = current_round + i + 1
+                    txn.last_valid_round = current_round + i + 1 + 1000
+                transaction.assign_group_id(group)
 
+            stxns = []
             for txn in group:
                 stxn = transaction.SignedTransaction(txn, b"", authorizing_address=auth_addr)
                 stxns.append(stxn)
@@ -792,9 +869,10 @@ def simulate_groups(
             result = client.simulate_transactions(req)
 
             group_result = result.get("txn-groups", [{}])[0]
-            if "failure-message" in group_result:
-                log.error("Group %d simulate FAILED: %s", i, group_result["failure-message"])
-                print(f"\nSimulate group {i} FAILED: {group_result['failure-message']}")
+            failure_message = group_result.get("failure-message", "")
+            if failure_message:
+                log.error("Group %d simulate FAILED: %s", i, failure_message)
+                print(f"\nSimulate group {i} FAILED: {failure_message}")
                 failed += 1
             else:
                 log.info("Group %d simulate OK", i)
@@ -988,14 +1066,41 @@ def print_dry_run_summary(
     else:
         print("Sufficient ALGO for MBR payments.")
 
+    # Cap a computation trace
+    cap_a = cap_report.get("details", {}).get("cap_a", {})
+    if cap_a and "windows" in cap_a:
+        print(f"\n--- CAP A COMPUTATION ---")
+        print(f"Trailing windows: {', '.join(cap_a['windows'])}")
+        print(f"Mean tFRY per window:  {cap_a.get('mean_tfry_dec', 0):,.2f}")
+        print(f"Mean fNODE per window: {cap_a.get('mean_fnode_dec', 0):,.2f}")
+        print(f"Threshold (3x mean) tFRY:  {cap_a.get('threshold_tfry_dec', 0):,.2f}")
+        print(f"Threshold (3x mean) fNODE: {cap_a.get('threshold_fnode_dec', 0):,.2f}")
+        print(f"Actual weekly tFRY:  {cap_a.get('weekly_tfry', 0) / MICROUNITS:,.2f}")
+        print(f"Actual weekly fNODE: {cap_a.get('weekly_fnode', 0) / MICROUNITS:,.2f}")
+        print(f"Pass tFRY: {cap_a.get('pass_tfry', False)} | Pass fNODE: {cap_a.get('pass_fnode', False)}")
+
     # Cap d details
     cap_d = cap_report.get("details", {}).get("cap_d", {})
-    if "mean_weekly_dec" in cap_d:
+    if "mean_per_device_dec" in cap_d:
         print(f"\n--- CAP D DETAILS ---")
-        print(f"Mean weekly per wallet: {cap_d['mean_weekly_dec']:,.2f}")
-        print(f"Max weekly per wallet:  {cap_d['max_weekly_dec']:,.2f}")
-        print(f"Threshold (10x mean):   {cap_d['threshold_dec']:,.2f}")
+        print(f"Mean per device:        {cap_d['mean_per_device_dec']:,.2f}")
+        print(f"Total devices:          {cap_d.get('total_devices', 0)}")
         print(f"Wallets in weekly:      {cap_d.get('W', 0)}")
+        print(f"Max weekly per wallet:  {cap_d['max_weekly_dec']:,.2f}")
+        flagged = cap_d.get("flagged", [])
+        if flagged:
+            print(f"\nFlagged wallets (new per-device check):")
+            print(f"{'Wallet':>44} {'Total':>14} {'Threshold':>14} {'Devices':>8}")
+            print("-" * 84)
+            for f in flagged[:5]:
+                print(f"{f['wallet']:>44} {f['amount']/MICROUNITS:>14,.2f} {f['threshold']/MICROUNITS:>14,.2f} {f['device_count']:>8}")
+        old_flagged = cap_d.get("old_flagged", [])
+        if old_flagged:
+            print(f"\nWallets that would have FAILED old flat check:")
+            print(f"{'Wallet':>44} {'Total':>14} {'Old Threshold':>14} {'Devices':>8}")
+            print("-" * 84)
+            for f in old_flagged[:5]:
+                print(f"{f['wallet']:>44} {f['amount']/MICROUNITS:>14,.2f} {f['threshold']/MICROUNITS:>14,.2f} {f['device_count']:>8}")
 
     # Top-5 wallets
     if weekly:
@@ -1056,7 +1161,7 @@ def print_dry_run_summary(
         a_pass_sb = "PASS" if sb_cap_a.get("pass_tfry") and sb_cap_a.get("pass_fnode") else "FAIL"
         print(f"{'Cap a (weekly totals)':<30} {a_pass_range:>18} {a_pass_sb:>18}")
 
-        if "threshold_dec" in range_cap_d and "threshold_dec" in sb_cap_d:
+        if "flagged" in range_cap_d and "flagged" in sb_cap_d:
             d_pass_range = "PASS" if range_cap_d.get("pass") else "FAIL"
             d_pass_sb = "PASS" if sb_cap_d.get("pass") else "FAIL"
             print(f"{'Cap d (max vs mean)':<30} {d_pass_range:>18} {d_pass_sb:>18}")
@@ -1144,7 +1249,7 @@ def publish_epoch(
     client = get_algod_client(algod_url, algod_token)
 
     # Caps
-    cap_report = check_caps(publish_records, weekly, preseed, client, app_id)
+    cap_report = check_caps(publish_records, weekly, preseed, client, app_id, db_main)
 
     if not dry_run and not cap_report["pass"]:
         print("\nCap breach in live mode. Aborting.")
@@ -1179,7 +1284,7 @@ def publish_epoch(
                 weekly_single, preseed, epoch, db_main, maturation_epochs
             )
             weekly_single_delta = compute_weekly_from_records(records_single, epoch, db_main)
-            cap_report_single = check_caps(records_single, weekly_single_delta, preseed, client, app_id)
+            cap_report_single = check_caps(records_single, weekly_single_delta, preseed, client, app_id, db_main)
             side_by_side = {
                 "window": latest_window,
                 "records": records_single,
