@@ -160,6 +160,11 @@ def query_weekly_rewards(db_main, days: int = 7) -> tuple[dict[str, dict[str, in
         if not wallet:
             devices_without_wallet += r.get("device_count", 0)
             continue
+        try:
+            encoding.decode_address(wallet)
+        except Exception:
+            devices_without_wallet += r.get("device_count", 0)
+            continue
         tfry = to_micro(r.get("tfry", 0))
         fnode = to_micro(r.get("fnode", 0))
         if tfry > 0 or fnode > 0:
@@ -310,6 +315,11 @@ def query_weekly_rewards_for_window(db_main, window_date_str: str) -> tuple[dict
     for r in results:
         wallet = (r["_id"] or "").strip()
         if not wallet:
+            devices_without_wallet += r.get("device_count", 0)
+            continue
+        try:
+            encoding.decode_address(wallet)
+        except Exception:
             devices_without_wallet += r.get("device_count", 0)
             continue
         tfry = to_micro(r.get("tfry", 0))
