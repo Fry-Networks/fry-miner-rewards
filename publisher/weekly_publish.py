@@ -156,7 +156,7 @@ def query_weekly_rewards(db_main, days: int = 7) -> tuple[dict[str, dict[str, in
     devices_without_wallet = 0
 
     for r in results:
-        wallet = r["_id"]
+        wallet = (r["_id"] or "").strip()
         if not wallet:
             devices_without_wallet += r.get("device_count", 0)
             continue
@@ -308,7 +308,7 @@ def query_weekly_rewards_for_window(db_main, window_date_str: str) -> tuple[dict
     wallet_totals = {}
     devices_without_wallet = 0
     for r in results:
-        wallet = r["_id"]
+        wallet = (r["_id"] or "").strip()
         if not wallet:
             devices_without_wallet += r.get("device_count", 0)
             continue
@@ -664,7 +664,7 @@ def check_caps(
         for cap_name, cap_data in report["details"].items():
             print(f"\n{cap_name}:")
             for k, v in cap_data.items():
-                if isinstance(v, int) and v > 1000:
+                if isinstance(v, int) and v > 1000 and any(x in k for x in ("tfry", "fnode", "algo")):
                     print(f"  {k}: {v / MICROUNITS:,.2f}")
                 else:
                     print(f"  {k}: {v}")
