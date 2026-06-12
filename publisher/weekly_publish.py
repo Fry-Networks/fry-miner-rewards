@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from pymongo import MongoClient
-from algosdk import encoding, mnemonic, transaction
+from algosdk import encoding, logic, mnemonic, transaction
 from algosdk.abi import Method
 from algosdk.atomic_transaction_composer import (
     AccountTransactionSigner,
@@ -67,9 +67,7 @@ def to_micro(value: float) -> int:
 
 
 def app_address(app_id: int) -> str:
-    return encoding.encode_address(
-        encoding.checksum(b"appID" + app_id.to_bytes(8, "big"))
-    )
+    return logic.get_application_address(app_id)
 
 
 def get_algod_client(algod_url: str, algod_token: str) -> algod.AlgodClient | None:
@@ -531,7 +529,7 @@ def build_atomic_groups(
     method = Method.from_signature(PUBLISH_METHOD_SIG)
     sp = client.suggested_params()
     sp.flat_fee = True
-    sp.fee = 2000
+    sp.fee = 1000
 
     groups = []
     current_group: list[transaction.Transaction] = []
@@ -543,7 +541,7 @@ def build_atomic_groups(
 
         mbr_pay = transaction.PaymentTxn(
             sender=admin_addr,
-            sp=client.suggested_params(),
+            sp=sp,
             receiver=app_addr,
             amt=mbr_amount,
         )
@@ -576,11 +574,12 @@ def build_atomic_groups(
     if current_group:
         groups.append(current_group)
 
-    # assignGroupID and set fees per group
+    # assignGroupID and set fees AFTER per §15
     for group in groups:
         transaction.assign_group_id(group)
+        # First txn (mbr_pay) pays its own fee; app_call covers itself
         for txn in group:
-            txn.fee = 2000
+            txn.fee = 1000
 
     return groups
 
