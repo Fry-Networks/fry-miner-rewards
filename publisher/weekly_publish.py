@@ -597,7 +597,7 @@ def check_caps(
     weekly_tfry = sum(a["tfry"] for a in weekly.values())
     weekly_fnode = sum(a["fnode"] for a in weekly.values())
 
-    windows = query_last_windows(db_main, n=3) if db_main else []
+    windows = query_last_windows(db_main, n=3) if db_main is not None else []
     if len(windows) >= 3:
         mean_tfry_dec = sum(w["tfry"] for w in windows) / len(windows)
         mean_fnode_dec = sum(w["fnode"] for w in windows) / len(windows)
