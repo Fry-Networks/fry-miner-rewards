@@ -182,7 +182,7 @@ def get_distinct_unlock_at_in_range(db_main, start_dt, end_dt) -> list[str]:
     pipeline = [
         {"$unwind": "$weekly_rewards"},
         {"$match": {"weekly_rewards.unlock_at": {"$gte": start_dt, "$lte": end_dt}}},
-        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$weekly_rewards.unlock_at"}}}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": {"$toDate": "$weekly_rewards.unlock_at"}}}}},
         {"$sort": {"_id": -1}},
     ]
     try:
@@ -199,7 +199,7 @@ def query_last_windows(db_main, n: int = 3) -> list[dict]:
         {"$unwind": "$weekly_rewards"},
         {
             "$group": {
-                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$weekly_rewards.unlock_at"}},
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": {"$toDate": "$weekly_rewards.unlock_at"}}},
                 "devices": {"$sum": 1},
                 "tfry": {
                     "$sum": {
@@ -775,8 +775,16 @@ def simulate_groups(
     for i, group in enumerate(groups):
         try:
             stxns = []
+            # Get auth address once for rekeyed admin
+            auth_addr = ADMIN_ADDR
+            try:
+                acct_info = client.account_info(ADMIN_ADDR)
+                auth_addr = acct_info.get("auth-addr", ADMIN_ADDR)
+            except Exception as e:
+                log.warning("Could not query auth-addr for admin: %s", e)
+
             for txn in group:
-                stxn = transaction.SignedTransaction(txn, b"")
+                stxn = transaction.SignedTransaction(txn, b"", authorizing_address=auth_addr)
                 stxns.append(stxn)
 
             tg = SimulateRequestTransactionGroup(txns=stxns)
