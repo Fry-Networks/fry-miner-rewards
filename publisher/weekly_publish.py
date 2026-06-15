@@ -13,12 +13,16 @@ import math
 import os
 import struct
 import sys
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from pymongo import MongoClient
-from algosdk import encoding, logic, mnemonic, transaction
+from algosdk import account, encoding, logic, mnemonic, transaction
 from algosdk.abi import Method
 from algosdk.atomic_transaction_composer import (
     AccountTransactionSigner,
@@ -54,6 +58,30 @@ CAP_POOL_FNODE_DEC = 213_762_677.82
 ALGOD_URL = os.environ.get("ALGOD_URL", "http://100.69.195.100:4190")
 
 log = logging.getLogger(__name__)
+
+_LOCK_FD = None
+
+
+def acquire_single_launch_lock(lock_path: str) -> None:
+    """Exclusive non-blocking lock so two --live runs can't overlap.
+
+    Kernel auto-releases on process exit/death.
+    """
+    global _LOCK_FD
+    if fcntl is None:
+        log.warning("fcntl unavailable (non-Unix) — single-launch guard SKIPPED")
+        return
+    _LOCK_FD = open(lock_path, "a")
+    try:
+        fcntl.flock(_LOCK_FD.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (BlockingIOError, OSError):
+        log.error(
+            "Another --live publish is already running (lock held: %s). "
+            "Aborting to prevent duplicate submission.",
+            lock_path,
+        )
+        sys.exit(1)
+    log.info("Single-launch lock acquired: %s", lock_path)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -615,6 +643,7 @@ def check_caps(
             "threshold_fnode_dec": threshold_fnode_dec,
             "pass_tfry": pass_tfry,
             "pass_fnode": pass_fnode,
+            "pass": pass_tfry and pass_fnode,
         }
         if not pass_tfry or not pass_fnode:
             report["pass"] = False
@@ -626,6 +655,7 @@ def check_caps(
             "note": f"insufficient history ({len(windows)} windows)",
             "pass_tfry": True,
             "pass_fnode": True,
+            "pass": True,
         }
 
     # Cap (b) total entitled - already_claimed <= pool balances
@@ -645,6 +675,8 @@ def check_caps(
     unclaimed_tfry = total_entitled_tfry - already_claimed_tfry
     unclaimed_fnode = total_entitled_fnode - already_claimed_fnode
 
+    pass_tfry_b = unclaimed_tfry <= pool_tfry
+    pass_fnode_b = unclaimed_fnode <= pool_fnode
     report["details"]["cap_b"] = {
         "total_entitled_tfry": total_entitled_tfry,
         "total_entitled_fnode": total_entitled_fnode,
@@ -654,12 +686,13 @@ def check_caps(
         "unclaimed_fnode": unclaimed_fnode,
         "pool_tfry": pool_tfry,
         "pool_fnode": pool_fnode,
-        "cap_tfry": to_micro(CAP_POOL_TFRY_DEC),
-        "cap_fnode": to_micro(CAP_POOL_FNODE_DEC),
-        "pass_tfry": unclaimed_tfry <= to_micro(CAP_POOL_TFRY_DEC),
-        "pass_fnode": unclaimed_fnode <= to_micro(CAP_POOL_FNODE_DEC),
+        "cap_tfry": pool_tfry,
+        "cap_fnode": pool_fnode,
+        "pass_tfry": pass_tfry_b,
+        "pass_fnode": pass_fnode_b,
+        "pass": pass_tfry_b and pass_fnode_b,
     }
-    if not report["details"]["cap_b"]["pass_tfry"] or not report["details"]["cap_b"]["pass_fnode"]:
+    if not pass_tfry_b or not pass_fnode_b:
         report["pass"] = False
 
     # Cap (c) wallet count invariant
@@ -770,16 +803,36 @@ def build_atomic_groups(
     groups = []
     current_group: list[transaction.Transaction] = []
 
+    import secrets
+
+    # MBR optimization: use app's existing ALGO excess before drawing from admin
+    acct = client.account_info(app_addr)
+    app_excess = acct["amount"] - acct["min-balance"]
+    log.info("App ALGO excess: %d (%.3f ALGO)", app_excess, app_excess / 1e6)
+
+    mbr_from_admin = 0
+    mbr_from_excess = 0
+
     for rec in records:
         wallet = rec["wallet"]
         is_existing = wallet in existing_wallets
-        mbr_amount = 0 if is_existing else MBR_PER_NEW_WALLET
+
+        if is_existing:
+            mbr_amount = 0
+        elif app_excess >= MBR_PER_NEW_WALLET:
+            mbr_amount = 0
+            app_excess -= MBR_PER_NEW_WALLET
+            mbr_from_excess += 1
+        else:
+            mbr_amount = MBR_PER_NEW_WALLET
+            mbr_from_admin += 1
 
         mbr_pay = transaction.PaymentTxn(
             sender=admin_addr,
             sp=sp,
             receiver=app_addr,
             amt=mbr_amount,
+            lease=secrets.token_bytes(32),
         )
 
         box_key = b"w" + encoding.decode_address(wallet)
@@ -799,6 +852,7 @@ def build_atomic_groups(
             ],
             accounts=[wallet],
             boxes=[(app_id, box_key)],
+            lease=secrets.token_bytes(32),
         )
 
         current_group.extend([mbr_pay, app_call])
@@ -810,10 +864,14 @@ def build_atomic_groups(
     if current_group:
         groups.append(current_group)
 
+    log.info(
+        "MBR: %d from excess, %d from admin (%.3f ALGO)",
+        mbr_from_excess, mbr_from_admin, mbr_from_admin * MBR_PER_NEW_WALLET / 1e6,
+    )
+
     # assignGroupID and set fees AFTER per §15
     for group in groups:
-        transaction.assign_group_id(group)
-        # First txn (mbr_pay) pays its own fee; app_call covers itself
+        # assign_group_id deferred to simulate_groups / submit_groups
         for txn in group:
             txn.fee = 1000
 
@@ -826,6 +884,8 @@ def build_atomic_groups(
 def simulate_groups(
     client: algod.AlgodClient,
     groups: list[list[transaction.Transaction]],
+    algod_url: str = "",
+    algod_token: str = "",
 ) -> tuple[bool, int, int]:
     """Simulate each group. Return (all_pass, passed_count, failed_count)."""
     if not groups:
@@ -840,13 +900,19 @@ def simulate_groups(
     except Exception as e:
         log.warning("Could not query auth-addr for admin: %s", e)
 
+    # Base suggested params for per-group first_valid offset
+    base_sp = client.suggested_params()
+
     passed = 0
     failed = 0
     for i, group in enumerate(groups):
         try:
-            # Mutate note per group to ensure unique txids without touching validity windows
-            for txn in group:
-                txn.note = f"sim-{i}".encode()
+            # Unique txids per txn: offset first_valid per group AND per txn
+            # (avoids node cache collision on same sender/app_id/first_valid)
+            for j, txn in enumerate(group):
+                txn.first_valid_round = base_sp.first - i - j
+                txn.last_valid_round = base_sp.last - i - j
+                txn.note = f"sim-{i}-{j}".encode()
             transaction.assign_group_id(group)
 
             stxns = []
@@ -854,9 +920,15 @@ def simulate_groups(
                 stxn = transaction.SignedTransaction(txn, b"", authorizing_address=auth_addr)
                 stxns.append(stxn)
 
+            # Fresh client per group to avoid any connection-level txn caching
+            sim_client = (
+                algod.AlgodClient(algod_token, algod_url)
+                if algod_url
+                else client
+            )
             tg = SimulateRequestTransactionGroup(txns=stxns)
             req = SimulateRequest(txn_groups=[tg], allow_empty_signatures=True)
-            result = client.simulate_transactions(req)
+            result = sim_client.simulate_transactions(req)
 
             group_result = result.get("txn-groups", [{}])[0]
             failure_message = group_result.get("failure-message", "")
@@ -883,25 +955,127 @@ def submit_groups(
     groups: list[list[transaction.Transaction]],
     signer_sk: bytes,
     admin_addr: str,
+    records: list[dict] | None = None,
+    app_id: int = APP_ID,
 ) -> dict[str, Any]:
-    """Submit atomic groups live. Returns stats."""
-    signer = AccountTransactionSigner(signer_sk)
+    """Submit atomic groups live with ground-truth box verification.
+
+    Each group is verified by checking that its wallet boxes exist on-chain
+    after submission. Retries up to 3 times with fresh params on failure.
+    """
+    import time
+
     stats = {"submitted": 0, "failed": 0, "wallets": 0}
 
-    for i, group in enumerate(groups):
-        try:
-            atc = AtomicTransactionComposer()
-            for txn in group:
-                atc.add_transaction(TransactionWithSigner(txn, signer))
+    # Pre-compute wallet list per group from records (reliable source)
+    wallets_per_group: list[list[str]] = []
+    if records:
+        idx = 0
+        for group in groups:
+            n_wallets = len(group) // 2
+            wallets_per_group.append(
+                [records[idx + j]["wallet"] for j in range(n_wallets)]
+            )
+            idx += n_wallets
 
-            result = atc.execute(client, 4)
+    import secrets
+
+    for i, group in enumerate(groups):
+        log.info("Group %d/%d — %d wallets published so far", i + 1, len(groups), stats["wallets"])
+        group_wallets = wallets_per_group[i] if wallets_per_group else []
+        expected = len(group) // 2
+        if len(group_wallets) != expected:
+            raise Exception(
+                f"Group {i}: extracted {len(group_wallets)} wallets, "
+                f"expected {expected} — wallet list mismatch; "
+                f"aborting before any submit"
+            )
+
+        success = False
+        for attempt in range(3):
+            try:
+                if attempt > 0:
+                    # Fresh params + fresh lease for retry (genuinely new TXIDs)
+                    sp = client.suggested_params()
+                    sp.flat_fee = True
+                    sp.fee = 1000
+                    for txn in group:
+                        txn.first_valid_round = sp.first
+                        txn.last_valid_round = sp.last
+                        txn.genesis_hash = sp.gh
+                        txn.lease = secrets.token_bytes(32)
+                        txn.group = None
+                    log.info("Group %d retry %d with fresh params+lease", i, attempt + 1)
+
+                transaction.assign_group_id(group)
+                signed_txns = [txn.sign(signer_sk) for txn in group]
+
+                txid = None
+                try:
+                    txid = client.send_transactions(signed_txns)
+                except Exception as send_err:
+                    if "already in ledger" not in str(send_err):
+                        raise
+                    log.info("Group %d send returned 'already in ledger', checking boxes", i)
+
+                # Poll for confirmation if we have txid
+                if txid:
+                    for _ in range(20):
+                        try:
+                            info = client.pending_transaction_info(txid)
+                            cr = info.get("confirmed-round", 0)
+                            if cr and cr > 0:
+                                log.info("Group %d confirmed round %d", i, cr)
+                                break
+                            pe = info.get("pool-error", "")
+                            if pe:
+                                raise Exception(f"pool error: {pe}")
+                        except Exception as poll_err:
+                            if "not found" in str(poll_err).lower():
+                                break
+                            raise
+                        time.sleep(3)
+
+                # GROUND TRUTH: poll box existence (absorb Nodely LB lag)
+                boxes_verified = False
+                for poll in range(5):
+                    time.sleep(2)
+                    boxes_found = 0
+                    for wallet in group_wallets:
+                        box_name = b"w" + encoding.decode_address(wallet)
+                        try:
+                            client.application_box_by_name(app_id, box_name)
+                            boxes_found += 1
+                        except Exception:
+                            pass
+                    if boxes_found == len(group_wallets):
+                        boxes_verified = True
+                        break
+                    log.debug(
+                        "Group %d box poll %d: %d/%d",
+                        i, poll + 1, boxes_found, len(group_wallets),
+                    )
+
+                if boxes_verified:
+                    success = True
+                    break
+                else:
+                    log.warning(
+                        "Group %d attempt %d: %d/%d boxes after polling, will retry",
+                        i, attempt + 1, boxes_found, len(group_wallets),
+                    )
+
+            except Exception as e:
+                log.warning("Group %d attempt %d error: %s", i, attempt + 1, e)
+
+        if success:
             stats["submitted"] += 1
             stats["wallets"] += len(group) // 2
-            log.info("Group %d submitted: %s", i, result.tx_ids[0])
-        except Exception as e:
+            log.info("Group %d verified (%d boxes on-chain)", i, len(group_wallets))
+        else:
             stats["failed"] += 1
-            log.error("Group %d submit FAILED: %s", i, e)
-            print(f"\nGroup {i} submit FAILED: {e}")
+            log.error("Group %d FAILED after 3 attempts (%d/%d boxes)", i, boxes_found, len(group_wallets))
+            print(f"\nGroup {i} FAILED after 3 attempts ({boxes_found}/{len(group_wallets)} boxes)")
 
     return stats
 
@@ -912,30 +1086,164 @@ def submit_advance_epoch(
     signer_sk: bytes,
     admin_addr: str,
 ) -> str | None:
-    """Submit advance_epoch app call. Returns txid or None."""
+    """Submit advance_epoch app call. Returns txid or None.
+
+    Uses direct sign + send_raw_transaction (ATC has rekeyed account issues).
+    """
     method = Method.from_signature(ADVANCE_METHOD_SIG)
-    signer = AccountTransactionSigner(signer_sk)
     sp = client.suggested_params()
     sp.flat_fee = True
     sp.fee = 2000
 
-    atc = AtomicTransactionComposer()
-    atc.add_method_call(
-        app_id=app_id,
-        method=method,
+    txn = transaction.ApplicationCallTxn(
         sender=admin_addr,
         sp=sp,
-        signer=signer,
+        index=app_id,
+        on_complete=transaction.OnComplete.NoOpOC,
+        app_args=[method.get_selector()],
     )
 
     try:
-        result = atc.execute(client, 4)
-        txid = result.tx_ids[0]
+        stxn = txn.sign(signer_sk)
+        txid = client.send_transaction(stxn)
+        transaction.wait_for_confirmation(client, txid, 4)
         log.info("advance_epoch submitted: %s", txid)
         return txid
     except Exception as e:
         log.error("advance_epoch FAILED: %s", e)
         return None
+
+
+# ── Plan export for call-batch.html ──────────────────────────────────────
+
+
+AUTH_ADDR = "7CTUPB7WJQYZBLPYIRQMRVOS2QOAB3R7RJBYTX5VGHV6QL4D7GCVCNCC7U"
+
+
+def export_plan(
+    records: list[dict],
+    existing_wallets: set[str],
+    epoch: int,
+    app_id: int,
+    output_path: str,
+    client: algod.AlgodClient | None = None,
+) -> None:
+    """Export publish plan as call-batch.html-compatible JSON.
+
+    Generates a plan that can be loaded into wc-signer's call-batch.html
+    for batch signing via Pera Wallet, eliminating the need for
+    AUTHORITY_MNEMONIC on the execution host.
+
+    MBR optimization: queries app's current ALGO excess and only includes
+    non-zero MBR payments for wallets where the app account needs more ALGO
+    to cover the new box min-balance. Prevents admin ALGO exhaustion.
+    """
+    app_addr = app_address(app_id)
+
+    # Calculate app's ALGO excess to optimize MBR payments
+    app_excess = 0
+    if client:
+        try:
+            acct = client.account_info(app_addr)
+            app_balance = acct["amount"]
+            app_min_bal = acct["min-balance"]
+            app_excess = app_balance - app_min_bal
+            log.info(
+                "App ALGO: balance=%d min_bal=%d excess=%d (%.3f ALGO)",
+                app_balance, app_min_bal, app_excess, app_excess / 1e6,
+            )
+        except Exception as e:
+            log.warning("Could not query app balance for MBR optimization: %s", e)
+
+    plan: dict[str, Any] = {
+        "appId": app_id,
+        "sender": ADMIN_ADDR,
+        "authAddr": AUTH_ADDR,
+        "network": "mainnet",
+        "batchSize": 10,
+        "groups": [],
+    }
+
+    new_count = 0
+    mbr_from_admin = 0
+    mbr_from_excess = 0
+    current_txns: list[dict[str, Any]] = []
+    wallet_start = 0
+    for i, rec in enumerate(records):
+        wallet = rec["wallet"]
+        is_existing = wallet in existing_wallets
+
+        if is_existing:
+            mbr_amount = 0
+        elif app_excess >= MBR_PER_NEW_WALLET:
+            # App has enough excess ALGO — no payment needed from admin
+            mbr_amount = 0
+            app_excess -= MBR_PER_NEW_WALLET
+            mbr_from_excess += 1
+            new_count += 1
+        else:
+            # Admin must pay full MBR
+            mbr_amount = MBR_PER_NEW_WALLET
+            mbr_from_admin += 1
+            new_count += 1
+
+        box_key_hex = "77" + encoding.decode_address(wallet).hex()
+
+        current_txns.append({"type": "pay", "to": app_addr, "amount": mbr_amount})
+        current_txns.append({
+            "type": "appl",
+            "method": PUBLISH_METHOD_SIG,
+            "args": [
+                wallet,
+                rec["entitled_tfry"],
+                rec["entitled_fnode"],
+                rec["matured_tfry"],
+                rec["matured_fnode"],
+                rec["epoch"],
+            ],
+            "boxes": [{"appIndex": app_id, "name": "hex:" + box_key_hex}],
+            "accounts": [wallet],
+        })
+
+        if len(current_txns) == MAX_TXNS_PER_GROUP:
+            plan["groups"].append({
+                "description": f"Wallets {wallet_start + 1}-{i + 1}",
+                "txns": current_txns,
+            })
+            current_txns = []
+            wallet_start = i + 1
+
+    if current_txns:
+        plan["groups"].append({
+            "description": f"Wallets {wallet_start + 1}-{len(records)}",
+            "txns": current_txns,
+        })
+
+    plan["groups"].append({
+        "description": "advance_epoch",
+        "txns": [{
+            "type": "appl",
+            "method": ADVANCE_METHOD_SIG,
+            "args": [],
+            "fee": 2000,
+        }],
+    })
+
+    with open(output_path, "w") as f:
+        json.dump(plan, f, indent=2)
+
+    admin_algo_needed = mbr_from_admin * MBR_PER_NEW_WALLET
+    print(
+        f"Plan exported: {output_path} "
+        f"({len(plan['groups'])} groups, {len(records)} wallets, "
+        f"batchSize={plan['batchSize']})"
+    )
+    print(
+        f"MBR: {new_count} new wallets — "
+        f"{mbr_from_excess} covered by app excess, "
+        f"{mbr_from_admin} need admin payment "
+        f"({admin_algo_needed / 1e6:.3f} ALGO from admin)"
+    )
 
 
 # ── Mongo logging ──────────────────────────────────────────────────────
@@ -1001,6 +1309,8 @@ def print_dry_run_summary(
     sim_passed: int = 0,
     sim_failed: int = 0,
     side_by_side: dict | None = None,
+    only_missing: bool = False,
+    skip_advance: bool = False,
 ) -> None:
     print(f"\n============ DRY RUN SUMMARY (Epoch {epoch}) ============")
     print(f"Total wallets to publish: {len(records)}")
@@ -1035,26 +1345,36 @@ def print_dry_run_summary(
             for w in recent:
                 print(f"{w['window']:<12} {w['devices']:>10,} {w['tfry']:>14,.2f} {w['fnode']:>14,.2f}")
 
-    # ALGO required
+    # ALGO required (MBR + transaction fees, mode-aware)
     new_boxes = len(records) - len(existing)
-    algo_for_mbr = new_boxes * MBR_PER_NEW_WALLET
+    _submit_n = new_boxes if only_missing else len(records)
+    _num_groups = (_submit_n + WALLETS_PER_GROUP - 1) // WALLETS_PER_GROUP
+    _mbr_budget = new_boxes * MBR_PER_NEW_WALLET
+    _fee_budget = _num_groups * MAX_TXNS_PER_GROUP * 1000          # 1000 µA/txn
+    if not skip_advance:
+        _fee_budget += 2000                                       # advance_epoch app call
+    algo_needed = _mbr_budget + _fee_budget
     admin_algo = get_account_balance(client, ADMIN_ADDR)
     app_algo, _, _ = get_app_balances(client, APP_ID)
 
     print(f"\n--- ALGO REQUIRED ---")
     print(f"New boxes: {new_boxes}")
     print(f"MBR per new box: {MBR_PER_NEW_WALLET} microAlgos")
-    print(f"Total MBR needed: {algo_for_mbr:,} microAlgos = {algo_for_mbr / 1e6:.3f} ALGO")
-    print(f"App ALGO balance: {app_algo:,} microAlgos = {app_algo / 1e6:.3f} ALGO")
-    print(f"Admin ALGO balance: {admin_algo:,} microAlgos = {admin_algo / 1e6:.3f} ALGO")
+    print(f"MBR total: {_mbr_budget:,} µA = {_mbr_budget / 1e6:.3f} ALGO")
+    print(f"Fee budget: {_fee_budget:,} µA = {_fee_budget / 1e6:.3f} ALGO "
+          f"({_num_groups} groups × {MAX_TXNS_PER_GROUP} txns × 0.001"
+          f"{'' if skip_advance else ' + advance 0.002'})")
+    print(f"Total ALGO needed: {algo_needed:,} µA = {algo_needed / 1e6:.3f} ALGO")
+    print(f"App ALGO balance: {app_algo:,} µA = {app_algo / 1e6:.3f} ALGO")
+    print(f"Admin ALGO balance: {admin_algo:,} µA = {admin_algo / 1e6:.3f} ALGO")
 
     available = admin_algo + app_algo
-    if available < algo_for_mbr:
-        shortfall = algo_for_mbr - available
-        print(f"SHORTFALL: {shortfall:,} microAlgos = {shortfall / 1e6:.3f} ALGO")
+    if available < algo_needed:
+        shortfall = algo_needed - available
+        print(f"SHORTFALL: {shortfall:,} µA = {shortfall / 1e6:.3f} ALGO")
         print("LIVE SUBMIT BLOCKED: fund admin/app account before --live")
     else:
-        print("Sufficient ALGO for MBR payments.")
+        print("Sufficient ALGO for MBR + fees.")
 
     # Cap a computation trace
     cap_a = cap_report.get("details", {}).get("cap_a", {})
@@ -1191,6 +1511,10 @@ def publish_epoch(
     days: int = 7,
     db_main=None,
     write_history: bool = True,
+    export_plan_path: str | None = None,
+    ack_cap_d: bool = False,
+    skip_advance: bool = False,
+    only_missing: bool = False,
 ) -> None:
     """Publish a batch of wallet records to the contract.
 
@@ -1241,12 +1565,53 @@ def publish_epoch(
     # Caps
     cap_report = check_caps(publish_records, weekly, preseed, client, app_id, db_main)
 
-    if not dry_run and not cap_report["pass"]:
-        print("\nCap breach in live mode. Aborting.")
-        sys.exit(1)
+    if not dry_run:
+        details = cap_report.get("details", {})
+        # Critical caps — always hard-stop
+        critical_fails = []
+        for cap_name in ("cap_a", "cap_b", "cap_c", "group_cap"):
+            if not details.get(cap_name, {}).get("pass", True):
+                critical_fails.append(cap_name)
+        if critical_fails:
+            print(f"\nCritical cap breach ({', '.join(critical_fails)}) in live mode. Aborting.")
+            sys.exit(1)
+
+        # Cap D — requires explicit acknowledgement
+        cap_d = details.get("cap_d", {})
+        cap_d_flagged = cap_d.get("flagged", [])
+        if not cap_d.get("pass", True):
+            flagged_addrs = [w["wallet"][:12] + "..." for w in cap_d_flagged[:5]]
+            print(f"\nCap D FAIL: {len(cap_d_flagged)} wallets flagged (per-device anomaly)")
+            print(f"  Flagged: {', '.join(flagged_addrs)}" + (f" (+{len(cap_d_flagged)-5} more)" if len(cap_d_flagged) > 5 else ""))
+            if not ack_cap_d:
+                print("  Review flagged wallets, then re-run with --ack-cap-d. Aborting.")
+                sys.exit(1)
+            else:
+                print("  Proceeding per --ack-cap-d.")
 
     # Query existing boxes
     existing = get_existing_wallets(client, app_id)
+
+    # --only-missing: filter to wallets without an on-chain box
+    if only_missing:
+        before = len(publish_records)
+        publish_records = [
+            r for r in publish_records if r["wallet"] not in existing
+        ]
+        after = len(publish_records)
+        print(f"only-missing: {len(existing)} existing boxes, {after} wallets to publish (filtered from {before})")
+        if after == 0:
+            print("Nothing to publish — all wallets have boxes.")
+            if mongo_client:
+                mongo_client.close()
+            return
+
+    # Export plan for call-batch.html signing (early exit — no group build needed)
+    if export_plan_path:
+        export_plan(publish_records, existing, epoch, app_id, export_plan_path, client)
+        if mongo_client:
+            mongo_client.close()
+        return
 
     # Build groups
     groups = build_atomic_groups(publish_records, existing, app_id, ADMIN_ADDR, client)
@@ -1257,7 +1622,9 @@ def publish_epoch(
 
     if dry_run:
         if client and groups:
-            sim_all_pass, sim_passed, sim_failed = simulate_groups(client, groups)
+            sim_all_pass, sim_passed, sim_failed = simulate_groups(
+                client, groups, algod_url=algod_url, algod_token=algod_token
+            )
             if not sim_all_pass:
                 print(f"\nSimulate: {sim_passed} groups passed / {sim_failed} groups failed")
         else:
@@ -1298,6 +1665,8 @@ def publish_epoch(
             sim_passed=sim_passed,
             sim_failed=sim_failed,
             side_by_side=side_by_side,
+            only_missing=only_missing,
+            skip_advance=skip_advance,
         )
 
         if mongo_client:
@@ -1305,13 +1674,25 @@ def publish_epoch(
         return
 
     # --live mode --
+    acquire_single_launch_lock(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".publish.lock")
+    )
+
     new_boxes = len(publish_records) - len(existing)
-    algo_needed = new_boxes * MBR_PER_NEW_WALLET
+    _submit_n = new_boxes if only_missing else len(publish_records)
+    _num_groups = (_submit_n + WALLETS_PER_GROUP - 1) // WALLETS_PER_GROUP
+    _mbr_budget = new_boxes * MBR_PER_NEW_WALLET
+    _fee_budget = _num_groups * MAX_TXNS_PER_GROUP * 1000          # 1000 µA/txn
+    if not skip_advance:
+        _fee_budget += 2000                                       # advance_epoch app call
+    algo_needed = _mbr_budget + _fee_budget
     admin_algo = get_account_balance(client, ADMIN_ADDR)
     app_algo, _, _ = get_app_balances(client, app_id)
     if admin_algo + app_algo < algo_needed:
         print(
-            f"ALGO SHORTFALL: need {algo_needed / 1e6:.3f}, have {(admin_algo + app_algo) / 1e6:.3f}"
+            f"ALGO SHORTFALL: need {algo_needed / 1e6:.3f} "
+            f"(MBR {_mbr_budget / 1e6:.3f} + fees {_fee_budget / 1e6:.3f}), "
+            f"have {(admin_algo + app_algo) / 1e6:.3f}"
         )
         sys.exit(1)
 
@@ -1321,23 +1702,29 @@ def publish_epoch(
         print("ERROR: AUTHORITY_MNEMONIC env var not set")
         sys.exit(1)
     signer_sk = mnemonic.to_private_key(mnemonic_val)
-    derived_addr = encoding.encode_address(encoding.checksum(signer_sk[32:]))
-    log.info("Signer (rekey): %s", derived_addr)
+    derived_addr = account.address_from_private_key(signer_sk)
+    log.info("Signer: %s", derived_addr)
 
     # Submit groups
-    stats = submit_groups(client, groups, signer_sk, ADMIN_ADDR)
+    stats = submit_groups(
+        client, groups, signer_sk, ADMIN_ADDR,
+        records=publish_records, app_id=app_id,
+    )
     print(f"\nPublished: {stats['wallets']} wallets in {stats['submitted']} groups")
     if stats["failed"] > 0:
         print(f"FAILED groups: {stats['failed']}")
         sys.exit(1)
 
     # advance_epoch
-    txid = submit_advance_epoch(client, app_id, signer_sk, ADMIN_ADDR)
-    if txid:
-        print(f"advance_epoch: {txid}")
+    if skip_advance:
+        print("advance_epoch SKIPPED (--skip-advance)")
     else:
-        print("advance_epoch FAILED")
-        sys.exit(1)
+        txid = submit_advance_epoch(client, app_id, signer_sk, ADMIN_ADDR)
+        if txid:
+            print(f"advance_epoch: {txid}")
+        else:
+            print("advance_epoch FAILED")
+            sys.exit(1)
 
     # Write history
     now = datetime.now(timezone.utc)
@@ -1388,17 +1775,54 @@ def main() -> None:
         "--days", type=int, default=7, help="Days back for weekly_rewards unlock_at window"
     )
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument(
+        "--export-plan",
+        type=str,
+        default=None,
+        help="Export signing plan JSON for call-batch.html (implies --dry-run, no signing)",
+    )
+    parser.add_argument(
+        "--ack-cap-d",
+        action="store_true",
+        default=False,
+        help="Acknowledge Cap D (per-device anomaly) failures and proceed with --live",
+    )
+    parser.add_argument(
+        "--skip-advance",
+        action="store_true",
+        default=False,
+        help="Skip advance_epoch after publishing (for recovery when epoch already advanced)",
+    )
+    parser.add_argument(
+        "--only-missing",
+        action="store_true",
+        default=False,
+        help="Publish only wallets without an existing on-chain box (recovery filter)",
+    )
     args = parser.parse_args()
 
-    if not args.dry_run and not args.live:
+    if not args.dry_run and not args.live and not args.export_plan:
         parser.print_usage()
-        print("ERROR: specify --dry-run or --live")
+        print("ERROR: specify --dry-run, --live, or --export-plan <path>")
         sys.exit(1)
+
+    # --export-plan implies dry-run behavior (no signing/submit)
+    if args.export_plan:
+        args.dry_run = True
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+
+    _logfile = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        f"publish-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.log",
+    )
+    _fh = logging.FileHandler(_logfile)
+    _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(_fh)
+    log.info("Progress log: %s", _logfile)
 
     # Determine epoch from chain if not provided
     epoch = args.epoch
@@ -1436,6 +1860,10 @@ def main() -> None:
         maturation_epochs=args.maturation_epochs,
         days=args.days,
         write_history=True,
+        export_plan_path=args.export_plan,
+        ack_cap_d=args.ack_cap_d,
+        skip_advance=args.skip_advance,
+        only_missing=args.only_missing,
     )
 
 
