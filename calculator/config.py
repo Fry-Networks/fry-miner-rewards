@@ -9,7 +9,7 @@ FRY20_ASA_ID = "2485314946"
 DECIMALS = 6
 MICROUNITS = 10**DECIMALS
 
-# PoC INSTALLER codes — from poc_eligibility.py on ZEUS00
+# PoC INSTALLER codes — from poc_eligibility.py on <internal-host>
 # These devices get slot-based PoC pro-rating via reward_eligible flag
 INSTALLER_CODES = frozenset({"BM", "IDM", "ODM", "ISM", "OSM", "RDN", "AEM"})
 
